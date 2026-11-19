@@ -1,0 +1,8 @@
+LIBRARY "enjoy_telemetry"
+
+EXPORTS
+    scs_telemetry_init
+    scs_telemetry_shutdown
+    ; Future Phase 6 (SCS Input SDK):
+    ; scs_input_init
+    ; scs_input_shutdown

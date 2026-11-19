@@ -1,0 +1,185 @@
+name: Build, Sign (SignPath) & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Unsigned Windows Binaries
+    runs-on: windows-latest
+    outputs:
+      artifact_id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+      version: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read Desktop App Version
+        id: meta
+        shell: pwsh
+        run: |
+          $pkg = Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json
+          echo "version=$($pkg.version)" >> $env:GITHUB_OUTPUT
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compile enjoy_telemetry.dll (MSVC x64)
+        working-directory: sdk/scs_sdk_1_16/enjoy_plugin
+        shell: cmd
+        run: |
+          cl.exe /LD /MT /std:c++17 /I..\include enjoy_telemetry.cpp enjoy_telemetry.def user32.lib advapi32.lib shell32.lib wininet.lib /Fe:enjoy_telemetry.dll
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install Frontend Dependencies
+        working-directory: apps/desktop
+        run: npm ci
+
+      - name: Build Unsigned Tauri NSIS Installer
+        working-directory: apps/desktop
+        run: npx tauri build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Stage Unsigned Release Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path unsigned-release | Out-Null
+          Copy-Item "sdk/scs_sdk_1_16/enjoy_plugin/enjoy_telemetry.dll" "unsigned-release/enjoy_telemetry.dll"
+          $ver = "${{ steps.meta.outputs.version }}"
+          $exe = "apps/desktop/src-tauri/target/release/bundle/nsis/ENJOYTRUCKERS_${ver}_x64-setup.exe"
+          if (-not (Test-Path $exe)) {
+            throw "Missing built installer: $exe"
+          }
+          Copy-Item $exe "unsigned-release/ENJOYTRUCKERS_${ver}_x64-setup.exe"
+
+      - name: Upload Unsigned Release Artifact
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-release
+          path: unsigned-release/
+          retention-days: 7
+
+  sign-and-release:
+    name: Authenticode Sign, Tauri Update Sign & Publish Release
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Configured Signing Secrets
+        id: cfg
+        shell: bash
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -n "$SIGNPATH_API_TOKEN" ] && [ -n "$SIGNPATH_ORGANIZATION_ID" ]; then
+            echo "has_signpath=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signpath=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SignPath secrets are not configured yet; publishing unsigned binaries."
+          fi
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "has_tauri_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_tauri_key=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Submit Signing Request to SignPath Foundation
+        if: steps.cfg.outputs.has_signpath == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'enjoytruckers-desktop' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ needs.build.outputs.artifact_id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-release
+
+      - name: Prepare Signed Binaries
+        if: steps.cfg.outputs.has_signpath == 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Get-ChildItem -Path signed-release -Recurse -File | Copy-Item -Destination release-assets -Force
+
+      - name: Download Unsigned Binaries (Fallback Before SignPath Setup)
+        if: steps.cfg.outputs.has_signpath != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-release
+          path: release-assets
+
+      - name: Setup Node.js for Tauri Updater Signature
+        if: steps.cfg.outputs.has_tauri_key == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate Tauri Updater Signature (.sig) & latest.json AFTER Code Signing
+        if: steps.cfg.outputs.has_tauri_key == 'true'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APP_VER: ${{ needs.build.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd apps/desktop
+          npm ci --ignore-scripts
+          cd ../..
+          EXE_NAME="ENJOYTRUCKERS_${APP_VER}_x64-setup.exe"
+          EXE_PATH="release-assets/${EXE_NAME}"
+          ./apps/desktop/node_modules/.bin/tauri signer sign "$EXE_PATH"
+          SIG_CONTENT=$(cat "${EXE_PATH}.sig")
+          node -e '
+            const fs = require("fs");
+            const payload = {
+              version: `v${process.env.APP_VER}`,
+              notes: `ENJOYTRUCKERS DTS-G1D3 Desktop v${process.env.APP_VER} update`,
+              pub_date: new Date().toISOString(),
+              platforms: {
+                "windows-x86_64": {
+                  signature: process.argv[1],
+                  url: `https://github.com/${process.env.REPO}/releases/download/v${process.env.APP_VER}/${process.argv[2]}`
+                }
+              }
+            };
+            fs.writeFileSync("release-assets/latest.json", JSON.stringify(payload, null, 2) + "\n");
+          ' "$SIG_CONTENT" "$EXE_NAME"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          name: ENJOYTRUCKERS Desktop v${{ needs.build.outputs.version }}
+          files: release-assets/*
+          generate_release_notes: true

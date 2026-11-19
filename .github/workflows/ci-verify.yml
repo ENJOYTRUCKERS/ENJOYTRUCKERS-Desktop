@@ -1,0 +1,58 @@
+name: CI Verify (Public OSS)
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+concurrency:
+  group: ci-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-windows:
+    name: Verify C++ Plugin & Tauri App (windows-latest)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compile SCS Telemetry Plugin DLL
+        working-directory: sdk/scs_sdk_1_16/enjoy_plugin
+        shell: cmd
+        run: |
+          cl.exe /LD /MT /std:c++17 /I..\include enjoy_telemetry.cpp enjoy_telemetry.def user32.lib advapi32.lib shell32.lib wininet.lib /Fe:enjoy_telemetry.dll
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install Frontend Dependencies & Build
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run build
+
+      - name: Cargo Check Tauri Backend
+        working-directory: apps/desktop/src-tauri
+        run: cargo check

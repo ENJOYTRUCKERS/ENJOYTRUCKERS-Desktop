@@ -1,0 +1,17 @@
+node_modules/
+dist/
+apps/desktop/dist/
+apps/desktop/node_modules/
+apps/desktop/src-tauri/target/
+*.key
+*.key.pub
+.env*
+*.dll
+*.exe
+*.sig
+*.obj
+*.lib
+*.exp
+build_log.txt
+.DS_Store
+Thumbs.db
