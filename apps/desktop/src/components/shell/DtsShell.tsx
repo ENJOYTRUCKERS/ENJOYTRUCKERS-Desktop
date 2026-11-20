@@ -25,18 +25,20 @@ export const DtsShell: React.FC<DtsShellProps> = ({
   return (
     <div
       style={{ opacity }}
-      className={`h-screen w-screen flex flex-col bg-[#111115] text-white font-sans overflow-hidden select-none ${
-        isSos ? "ring-4 ring-inset ring-red-600" : ""
+      className={`h-screen w-screen flex flex-col bg-[#0c0f1a] text-white font-sans overflow-hidden select-none ${
+        isSos ? "ring-2 ring-inset ring-red-600" : ""
       }`}
     >
       {topBar}
-      <div className="flex-1 flex overflow-hidden min-h-0">
-        <main className="flex-1 flex flex-col relative overflow-hidden min-w-0">
-          {children}
-        </main>
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <main className="flex-1 flex flex-col relative overflow-hidden min-h-0">
+            {children}
+          </main>
+          {bottomBar}
+        </div>
         {rightSidebar}
       </div>
-      {bottomBar}
     </div>
   );
 };

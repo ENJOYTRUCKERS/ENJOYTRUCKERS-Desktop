@@ -1,15 +1,7 @@
 import React from "react";
-import {
-  Award,
-  Bot,
-  CheckCircle2,
-  Home,
-  Scale,
-  Sparkles,
-  Undo2,
-} from "lucide-react";
+import { Home } from "lucide-react";
 import { formatHm } from "../components/shell/BottomTelemetryBar";
-import type { DtsViewId, WorkState } from "../types/tachograph";
+import type { DtsViewId, RoadType, WorkState } from "../types/tachograph";
 
 interface ReturnGarageViewProps {
   workState: WorkState;
@@ -27,8 +19,16 @@ interface ReturnGarageViewProps {
   } | null;
   onConfirmReturnGarage: () => void;
   onRequestAiReview: () => void;
+  onBack: () => void;
   onNavigate: (view: DtsViewId) => void;
 }
+
+const ROAD_LABELS: Record<RoadType, string> = {
+  city: "市街地",
+  local: "一般道",
+  highway: "高速道",
+  private: "専用道",
+};
 
 export const ReturnGarageView: React.FC<ReturnGarageViewProps> = ({
   workState,
@@ -39,6 +39,7 @@ export const ReturnGarageView: React.FC<ReturnGarageViewProps> = ({
   lastFinishedSummary,
   onConfirmReturnGarage,
   onRequestAiReview,
+  onBack,
   onNavigate,
 }) => {
   const summary = lastFinishedSummary || {
@@ -57,127 +58,126 @@ export const ReturnGarageView: React.FC<ReturnGarageViewProps> = ({
   const isCompleted = workState.status === "Idle" && lastFinishedSummary !== null;
 
   return (
-    <div className="flex-1 bg-[#18181f] flex flex-col p-3.5 justify-between overflow-hidden">
-      <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-        <span className="text-sm font-black text-white flex items-center gap-1.5">
-          <Home className="w-4 h-4 text-[#ff1155]" />
-          {isCompleted
-            ? "帰庫完了・本日乗務日報サマリー"
-            : "帰庫確認（運行終了・ポータル日報送信）"}
+    <div className="flex-1 bg-[#0c0f1a] flex flex-col justify-between overflow-hidden min-h-0">
+      {/* Cyan Header Banner */}
+      <div className="h-11 bg-gradient-to-b from-[#3fa7da] to-[#2e8ec0] px-4 flex items-center justify-between text-white shrink-0">
+        <span className="flex items-center gap-2 font-bold text-lg">
+          <Home className="w-5 h-5" />
+          {isCompleted ? "帰庫完了（運行終了）" : "帰庫確認"}
         </span>
-        {!isCompleted && (
-          <button
-            type="button"
-            onClick={() => onNavigate("driving")}
-            className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center gap-1"
-          >
-            <Undo2 className="w-3.5 h-3.5" />
-            運行へ戻る
-          </button>
-        )}
+        <span className="text-xs font-bold">
+          {ROAD_LABELS[workState.road_type] || "一般道"} /{" "}
+          {workState.is_loaded ? "実車" : "空車"}
+        </span>
       </div>
 
-      <div className="grid grid-cols-12 gap-3 my-2 flex-1 min-h-0">
-        <div className="col-span-6 bg-[#23232c] border border-zinc-700 rounded p-3 flex flex-col justify-between">
-          <div className="text-xs font-bold text-zinc-400 flex items-center justify-between">
-            <span className="flex items-center gap-1">
-              <Award className="w-4 h-4 text-amber-400" />
-              安全運転G評価 ＆ 430判定
-            </span>
-            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono font-black text-xs">
-              Gランク {summary.gRank} ({summary.gScore.toFixed(1)}点)
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-xs my-1">
-            <div className="bg-zinc-900 rounded p-2">
-              <div className="text-[10px] text-zinc-500">実走行距離</div>
-              <div className="font-mono font-black text-white text-sm">
-                {summary.distanceKm.toFixed(1)} km
-              </div>
-            </div>
-            <div className="bg-zinc-900 rounded p-2">
-              <div className="text-[10px] text-zinc-500">最大連続運転</div>
-              <div className="font-mono font-black text-white text-sm">
-                {formatHm(summary.maxContinuousSec)}
-              </div>
-            </div>
-            <div className="bg-zinc-900 rounded p-2">
-              <div className="text-[10px] text-zinc-500">430法令順守</div>
-              <div
-                className={`font-black text-xs flex items-center gap-1 ${
-                  summary.is430Violation ? "text-red-400" : "text-emerald-400"
-                }`}
-              >
-                <Scale className="w-3.5 h-3.5" />
-                {summary.is430Violation ? "違反あり" : "完全順守"}
-              </div>
-            </div>
-            <div className="bg-zinc-900 rounded p-2">
-              <div className="text-[10px] text-zinc-500">急挙動・衝撃合計</div>
-              <div className="font-mono font-black text-white text-sm">
-                {summary.harshTotal} 回
-              </div>
-            </div>
-          </div>
-
-          <div className="text-[11px] text-zinc-400">
+      {/* Body */}
+      <div className="flex-1 p-3 flex flex-col justify-between gap-2.5 min-h-0 overflow-y-auto">
+        <div className="bg-[#151828] border border-[#2a2e45] px-3 py-2 text-xs text-zinc-200 flex items-center justify-between">
+          <span>
             {isCompleted
-              ? "日報・1Hz圧縮波形データをポータルへ送信しました（Truckyジョブと自動突合されます）。"
-              : "「帰庫確定」を押すと1Hz波形・430実績・Gスコアをポータルへ送信し、業務を終了します。"}
+              ? "日報および1Hz圧縮波形データをポータルへ送信しました。お疲れ様でした。"
+              : "実車・空車および道路区分に間違いがないかを確認し、「確定」を押してください。"}
+          </span>
+          <span className="font-bold text-[#64c4ed] shrink-0 ml-2">
+            Gランク {summary.gRank} ({summary.gScore.toFixed(1)}点)
+          </span>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2 text-xs">
+          <div className="bg-[#151828] border border-[#2a2e45] p-2">
+            <div className="text-[11px] text-zinc-400">実走行距離</div>
+            <div className="text-base font-bold text-white tabular-nums mt-0.5">
+              {summary.distanceKm.toFixed(1)} km
+            </div>
+          </div>
+          <div className="bg-[#151828] border border-[#2a2e45] p-2">
+            <div className="text-[11px] text-zinc-400">最大連続運転</div>
+            <div className="text-base font-bold text-white tabular-nums mt-0.5">
+              {formatHm(summary.maxContinuousSec)}
+            </div>
+          </div>
+          <div className="bg-[#151828] border border-[#2a2e45] p-2">
+            <div className="text-[11px] text-zinc-400">430法令順守</div>
+            <div
+              className={`text-sm font-bold mt-1 ${
+                summary.is430Violation ? "text-red-400" : "text-[#4ee05c]"
+              }`}
+            >
+              {summary.is430Violation ? "違反あり" : "順守"}
+            </div>
+          </div>
+          <div className="bg-[#151828] border border-[#2a2e45] p-2">
+            <div className="text-[11px] text-zinc-400">急挙動・衝撃</div>
+            <div className="text-base font-bold text-white tabular-nums mt-0.5">
+              {summary.harshTotal} 回
+            </div>
           </div>
         </div>
 
-        {/* AI Operation Manager Review (Phase 6 feat_ai_review) */}
-        <div className="col-span-6 bg-[#23232c] border border-zinc-700 rounded p-3 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-sky-300 flex items-center gap-1.5">
-              <Bot className="w-4 h-4" />
-              AI運行管理者 ワンポイント安全講評
+        {/* AI Review Panel */}
+        <div className="flex-1 bg-[#151828] border border-[#2a2e45] p-2.5 flex flex-col min-h-0">
+          <div className="flex items-center justify-between border-b border-[#2a2e45] pb-1.5 mb-1.5 shrink-0">
+            <span className="text-xs font-bold text-[#64c4ed]">
+              運行管理者AI 安全運転講評
             </span>
             {aiReviewEnabled && (
               <button
                 type="button"
                 onClick={onRequestAiReview}
                 disabled={isRequestingAiReview}
-                className="px-2 py-0.5 rounded bg-sky-600/30 hover:bg-sky-600/50 border border-sky-500/40 text-sky-200 text-[10px] font-bold flex items-center gap-1"
+                className="px-2.5 py-0.5 bg-[#4e4c73] hover:bg-[#5c5a86] text-white text-[11px] font-bold rounded-[2px]"
               >
-                <Sparkles className="w-3 h-3" />
-                {isRequestingAiReview ? "生成中..." : "AI講評を取得"}
+                {isRequestingAiReview ? "取得中..." : "AI講評取得"}
               </button>
             )}
           </div>
-
-          <div className="flex-1 bg-zinc-900/90 border border-zinc-800 rounded p-2.5 my-2 overflow-y-auto text-xs text-zinc-200 leading-relaxed">
-            {aiReviewText ? (
-              aiReviewText
-            ) : (
-              <span className="text-zinc-500">
-                帰庫確定後、本日の3軸G波形・430休憩実績に基づく運行管理者AIの安全運転フィードバックが表示されます。
-              </span>
-            )}
+          <div className="flex-1 overflow-y-auto text-xs text-zinc-200 leading-relaxed">
+            {aiReviewText
+              ? aiReviewText
+              : "帰庫確定後、本日の3軸G評価および430休憩実績にもとづく安全運転講評が表示されます。"}
           </div>
+        </div>
+      </div>
 
-          {!isCompleted ? (
+      {/* Bottom Action Bar */}
+      <div className="bg-[#222436] px-3 py-2 border-t border-[#32344a] flex items-center justify-between shrink-0">
+        {!isCompleted ? (
+          <>
+            <button
+              type="button"
+              onClick={onBack}
+              className="bg-[#525074] hover:bg-[#62608a] text-white h-10 px-6 text-sm font-bold rounded-[2px]"
+            >
+              戻る
+            </button>
             <button
               type="button"
               onClick={onConfirmReturnGarage}
               disabled={isFinishingDuty}
-              className="w-full h-11 rounded bg-[#2cc938] hover:bg-[#25ad30] text-black font-black text-base flex items-center justify-center gap-1.5 shadow-lg"
+              className="bg-gradient-to-b from-[#55b9ea] to-[#3999cb] hover:from-[#65c4f2] hover:to-[#45a5d6] text-white h-10 px-10 text-base font-bold rounded-[2px]"
             >
-              <CheckCircle2 className="w-5 h-5" />
-              {isFinishingDuty ? "日報送信中..." : "帰庫確定（業務終了・送信）"}
+              {isFinishingDuty ? "送信中..." : "確定"}
             </button>
-          ) : (
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => onNavigate("login")}
+              className="bg-[#525074] hover:bg-[#62608a] text-white h-10 px-6 text-sm font-bold rounded-[2px]"
+            >
+              乗務員画面
+            </button>
             <button
               type="button"
               onClick={() => onNavigate("pre_departure")}
-              className="w-full h-11 rounded bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-black text-sm flex items-center justify-center gap-1.5"
+              className="bg-gradient-to-b from-[#55b9ea] to-[#3999cb] hover:from-[#65c4f2] hover:to-[#45a5d6] text-white h-10 px-8 text-sm font-bold rounded-[2px]"
             >
-              次の乗務準備（始業画面）へ戻る
+              始業画面へ
             </button>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );

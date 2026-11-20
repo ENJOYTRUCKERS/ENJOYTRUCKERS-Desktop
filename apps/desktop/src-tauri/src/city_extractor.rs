@@ -433,9 +433,14 @@ fn parse_cities_and_locale(
     let mut raw_cities: Vec<ExtractedCity> = Vec::new();
 
     for (src_name, text) in entries {
-        // 1. Parse localization key[] / val[] blocks (prefer ja_jp locale files)
-        let is_ja_src = src_name.contains("ja_jp") || text.contains("東京") || text.contains("ロンドン") || text.contains("ベルリン");
-        if text.contains("localization_db") || (text.contains("key[") && text.contains("val[")) {
+        // 1. Parse localization key[] / val[] blocks (ja_jp locale files only)
+        //    NOTE: zh_tw / zh_cn 等も漢字を含むため、漢字や非ASCIIの有無では判定しない。
+        //    ファイル名が ja_jp、または本文にかな（ひらがな/カタカナ）を含む場合のみ日本語ロケールとみなす。
+        let has_kana = |s: &str| {
+            s.chars().any(|c| matches!(c, '\u{3040}'..='\u{309F}' | '\u{30A0}'..='\u{30FF}'))
+        };
+        let is_ja_src = src_name.contains("ja_jp") || has_kana(text.as_str());
+        if is_ja_src && (text.contains("localization_db") || (text.contains("key[") && text.contains("val["))) {
             let mut pending_key: Option<String> = None;
             for line in text.lines() {
                 let t = line.trim();
@@ -443,9 +448,7 @@ fn parse_cities_and_locale(
                     pending_key = extract_sii_quoted(t);
                 } else if t.starts_with("val[") {
                     if let (Some(k), Some(v)) = (pending_key.take(), extract_sii_quoted(t)) {
-                        if is_ja_src || v.chars().any(|c| !c.is_ascii()) {
-                            ja_locale.insert(k, v);
-                        }
+                        ja_locale.insert(k, v);
                     }
                 }
             }

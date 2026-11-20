@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { CheckCircle2, XCircle } from "lucide-react";
 
 interface GreenModalProps {
   open: boolean;
@@ -9,6 +8,10 @@ interface GreenModalProps {
   confirmLabel?: string;
   cancelLabel?: string;
   autoConfirmSeconds?: number;
+  options?: string[];
+  singleConfirm?: boolean;
+  hideButtons?: boolean;
+  onSelectOption?: (option: string) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -21,6 +24,10 @@ export const GreenModal: React.FC<GreenModalProps> = ({
   confirmLabel = "確認",
   cancelLabel = "取消",
   autoConfirmSeconds,
+  options,
+  singleConfirm = false,
+  hideButtons = false,
+  onSelectOption,
   onConfirm,
   onCancel,
 }) => {
@@ -51,34 +58,64 @@ export const GreenModal: React.FC<GreenModalProps> = ({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4 select-none">
-      <div className="w-full max-w-md bg-[#232329] border-2 border-[#2cc938] rounded-md shadow-2xl overflow-hidden">
-        <div className="bg-[#2cc938] text-black px-4 py-2 font-black text-base tracking-wide flex items-center justify-between">
-          <span>{title}</span>
-          <span className="text-xs font-mono">DTS-G1D3</span>
+    <div className="fixed inset-0 z-50 bg-black/65 flex items-center justify-center p-4 select-none">
+      <div className="w-[350px] max-w-[92%] bg-white border border-[#1f2029] rounded-[2px] shadow-2xl overflow-hidden">
+        <div className="bg-[#2cc938] text-white text-center font-bold py-1.5 text-[15px] tracking-wide">
+          {title}
         </div>
-        <div className="p-5 text-center space-y-2">
-          <p className="text-white text-lg font-bold leading-snug">{message}</p>
-          {subMessage && (
-            <p className="text-zinc-400 text-xs">{subMessage}</p>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-3 px-5 pb-5">
-          <button
-            onClick={onCancel}
-            className="h-12 rounded bg-zinc-700 hover:bg-zinc-600 active:bg-zinc-800 text-white font-bold text-base flex items-center justify-center gap-1.5 border-b-2 border-zinc-900"
+
+        {options && options.length > 0 ? (
+          <div className="bg-white text-[#111111] divide-y divide-zinc-300 max-h-60 overflow-y-auto">
+            {options.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() =>
+                  onSelectOption ? onSelectOption(opt) : onConfirm()
+                }
+                className="w-full text-left px-4 py-3 text-[15px] font-medium hover:bg-zinc-100 active:bg-zinc-200 transition-colors"
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white text-[#111111] px-5 py-5 space-y-1.5">
+            <p className="text-[15px] font-medium leading-snug">{message}</p>
+            {subMessage && (
+              <p className="text-zinc-600 text-xs">{subMessage}</p>
+            )}
+          </div>
+        )}
+
+        {!hideButtons && (!options || options.length === 0) && (
+          <div
+            className={`px-4 pb-3.5 bg-white ${
+              singleConfirm
+                ? "flex justify-center"
+                : "grid grid-cols-2 gap-3"
+            }`}
           >
-            <XCircle className="w-4 h-4" />
-            {cancelLabel}
-          </button>
-          <button
-            onClick={onConfirm}
-            className="h-12 rounded bg-[#2cc938] hover:bg-[#25ad30] active:bg-[#1e8f27] text-black font-black text-base flex items-center justify-center gap-1.5 border-b-2 border-emerald-900"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            {remaining !== null ? `${confirmLabel}(${remaining})` : confirmLabel}
-          </button>
-        </div>
+            {!singleConfirm && (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="h-10 rounded-[2px] bg-[#858399] hover:bg-[#76748b] active:bg-[#66647a] text-white font-bold text-[15px]"
+              >
+                {cancelLabel}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onConfirm}
+              className={`h-10 rounded-[2px] bg-[#858399] hover:bg-[#76748b] active:bg-[#66647a] text-white font-bold text-[15px] ${
+                singleConfirm ? "w-44" : ""
+              }`}
+            >
+              {remaining !== null ? `${confirmLabel}(${remaining})` : confirmLabel}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -230,29 +230,37 @@ const INITIAL_WORK_STATE: WorkState = {
 
 const ROAD_CYCLE: RoadType[] = ["city", "local", "highway", "private"];
 
+function formatClockHm(ms: number): string {
+  const safeMs = Number.isFinite(ms) ? ms : Date.now();
+  const now = new Date(safeMs);
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 function App() {
   const portalUrl =
     import.meta.env.VITE_PORTAL_URL || "https://portal.truckers.jp";
 
   const [currentView, setCurrentView] = useState<DtsViewId>("splash");
-  const [previousView, setPreviousView] = useState<DtsViewId>("driving");
+  const [previousView, setPreviousView] = useState<DtsViewId>("work_menu");
   const [isFullScreenMap, setIsFullScreenMap] = useState(false);
 
   const [loginId, setLoginId] = useState("");
   const [loginName, setLoginName] = useState("乗務員不明");
   const [expectedEmployeeId, setExpectedEmployeeId] = useState("");
   const [userSteamId, setUserSteamId] = useState("");
-  const [userAvatar, setUserAvatar] = useState<string | null>(null);
-  const [driverRank, setDriverRank] = useState<string>("DRIVER");
   const [canSyncCities, setCanSyncCities] = useState(false);
   const [telemetryToken, setTelemetryToken] = useState("");
 
-  const [time, setTime] = useState("00:00:00");
-  const [appVersion, setAppVersion] = useState("0.1.22");
+  const [time, setTime] = useState<string>(() => formatClockHm(Date.now()));
+  const [appVersion, setAppVersion] = useState("0.1.24");
   const [isOnline, setIsOnline] = useState(false);
 
   const [telemetry, setTelemetry] = useState<TelemetryData>(INITIAL_TELEMETRY);
   const [workState, setWorkState] = useState<WorkState>(INITIAL_WORK_STATE);
+  const [activeWorkDisplayLabel, setActiveWorkDisplayLabel] =
+    useState<string>("");
   const [drivingPattern, setDrivingPattern] = useState<"A" | "B" | "C">("A");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [featureFlags, setFeatureFlags] = useState<DesktopFeatureFlags>(
@@ -278,7 +286,18 @@ function App() {
     countdown?: number;
   } | null>(null);
 
-  // Super feature data states
+  // Fullscreen map confirmation + hint modal (234104.png / 234113.png)
+  const [navFullscreenConfirm, setNavFullscreenConfirm] = useState(false);
+  const [navFullscreenHint, setNavFullscreenHint] = useState(false);
+
+  // Wait / Rest alarm state (233824.png / 233844.png)
+  const [alarmTargetMs, setAlarmTargetMs] = useState<number | null>(null);
+  const [alarmMinutesRemaining, setAlarmMinutesRemaining] = useState<
+    number | null
+  >(null);
+  const [alarmTriggeredModal, setAlarmTriggeredModal] = useState(false);
+
+  // Portal data states
   const [dispatchOrders, setDispatchOrders] = useState<DispatchOrderItem[]>([]);
   const [dispatchEvents, setDispatchEvents] = useState<DispatchEventItem[]>([]);
   const [isLoadingDispatch, setIsLoadingDispatch] = useState(false);
@@ -318,17 +337,32 @@ function App() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workStateRef = useRef<WorkState>(workState);
+  const currentViewRef = useRef<DtsViewId>(currentView);
+  const previousViewRef = useRef<DtsViewId>(previousView);
+  const isFullScreenMapRef = useRef<boolean>(isFullScreenMap);
   const profileNameRef = useRef<string>("");
   const wsAuthTokenRef = useRef<string>("");
   const voiceEnabledRef = useRef<boolean>(true);
   const featureFlagsRef = useRef<DesktopFeatureFlags>(DEFAULT_FEATURE_FLAGS);
+  const alarmTargetMsRef = useRef<number | null>(null);
   const alerted430WarnRef = useRef(false);
   const alerted430ViolRef = useRef(false);
   const lastHazardAlertTimeRef = useRef(0);
+  const prevSpeedRef = useRef<number>(0);
 
   useEffect(() => {
     workStateRef.current = workState;
   }, [workState]);
+
+  useEffect(() => {
+    currentViewRef.current = currentView;
+    previousViewRef.current = previousView;
+    isFullScreenMapRef.current = isFullScreenMap;
+  }, [currentView, previousView, isFullScreenMap]);
+
+  useEffect(() => {
+    alarmTargetMsRef.current = alarmTargetMs;
+  }, [alarmTargetMs]);
 
   useEffect(() => {
     voiceEnabledRef.current =
@@ -336,14 +370,31 @@ function App() {
     featureFlagsRef.current = featureFlags;
   }, [voiceEnabled, featureFlags]);
 
-  const navigateTo = useCallback(
-    (next: DtsViewId) => {
-      playDtsChime("beep", voiceEnabledRef.current);
-      setPreviousView(currentView);
-      setCurrentView(next);
-    },
-    [currentView]
-  );
+  const navigateTo = useCallback((next: DtsViewId) => {
+    playDtsChime("beep", voiceEnabledRef.current);
+    setPreviousView(currentViewRef.current);
+    setCurrentView(next);
+    if (next !== "nav") {
+      setIsFullScreenMap(false);
+    }
+    if (next === "return_garage") {
+      speakJapanese("確認してください。", voiceEnabledRef.current);
+    }
+  }, []);
+
+  const navigateBack = useCallback(() => {
+    playDtsChime("beep", voiceEnabledRef.current);
+    const target =
+      previousViewRef.current &&
+      previousViewRef.current !== currentViewRef.current &&
+      previousViewRef.current !== "splash"
+        ? previousViewRef.current
+        : workStateRef.current.status === "Idle"
+        ? "pre_departure"
+        : "work_menu";
+    setCurrentView(target);
+    setIsFullScreenMap(false);
+  }, []);
 
   const syncInstalledDlcs = useCallback(
     async (explicitToken?: string, showFeedback = false) => {
@@ -365,9 +416,9 @@ function App() {
         const detected = await invoke<DlcDetectionResult>(
           "detect_installed_dlcs"
         );
-        const totalDetected =
-          (detected?.ets2?.length || 0) + (detected?.ats?.length || 0);
-        if (totalDetected === 0) {
+        const ets2Dlcs = detected?.ets2 || [];
+        const atsDlcs = detected?.ats || [];
+        if (ets2Dlcs.length === 0 && atsDlcs.length === 0) {
           if (showFeedback) {
             await message("導入済みのETS2 / ATS DLCが検出されませんでした。", {
               title: "DLC同期",
@@ -376,19 +427,43 @@ function App() {
           }
           return;
         }
-        const res = await fetch(`${portalUrl}/api/desktop/dlc`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            token,
-            ets2: detected.ets2,
-            ats: detected.ats,
-          }),
-        });
-        if (res.ok && showFeedback) {
-          const data = await res.json();
+
+        let ets2Count = 0;
+        let atsCount = 0;
+        if (ets2Dlcs.length > 0) {
+          const r = await fetch(`${portalUrl}/api/desktop/dlc`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              telemetryToken: token,
+              game: "ets2",
+              dlcs: ets2Dlcs,
+            }),
+          });
+          if (r.ok) {
+            const d = await r.json();
+            ets2Count = Number(d?.count ?? ets2Dlcs.length);
+          }
+        }
+        if (atsDlcs.length > 0) {
+          const r = await fetch(`${portalUrl}/api/desktop/dlc`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              telemetryToken: token,
+              game: "ats",
+              dlcs: atsDlcs,
+            }),
+          });
+          if (r.ok) {
+            const d = await r.json();
+            atsCount = Number(d?.count ?? atsDlcs.length);
+          }
+        }
+
+        if (showFeedback) {
           await message(
-            `DLC同期が完了しました。\nETS2: ${data.ets2Count}件 / ATS: ${data.atsCount}件`,
+            `DLC同期が完了しました。\nETS2: ${ets2Count}件 / ATS: ${atsCount}件`,
             { title: "DLC同期完了", kind: "info" }
           );
         }
@@ -455,8 +530,66 @@ function App() {
         );
         if (res.ok) {
           const data = await res.json();
-          setDispatchOrders(data.orders || []);
-          setDispatchEvents(data.events || []);
+          const rawOrders = Array.isArray(data?.orders) ? data.orders : [];
+          setDispatchOrders(
+            rawOrders.map((o: Record<string, unknown>) => ({
+              id: String(o.id ?? ""),
+              title: String(o.title ?? "運行指示"),
+              sourceCity:
+                (o.sourceCityJa as string | null) ??
+                (o.sourceCityId as string | null) ??
+                (o.sourceCity as string | null) ??
+                null,
+              destinationCity:
+                (o.destinationCityJa as string | null) ??
+                (o.destinationCityId as string | null) ??
+                (o.destinationCity as string | null) ??
+                null,
+              cargoName:
+                (o.cargoHint as string | null) ??
+                (o.cargoName as string | null) ??
+                null,
+              notes: (o.notes as string | null) ?? null,
+              parkingImageUrl: (o.parkingImageUrl as string | null) ?? null,
+              status:
+                o.status === "accepted"
+                  ? "in_progress"
+                  : String(o.status ?? "published"),
+              scheduledAt:
+                (o.sentAt as string | null) ??
+                (o.scheduledAt as string | null) ??
+                null,
+              createdAt: String(o.createdAt ?? ""),
+            }))
+          );
+
+          const rawEvents = Array.isArray(data?.upcomingEvents)
+            ? data.upcomingEvents
+            : Array.isArray(data?.events)
+            ? data.events
+            : [];
+          setDispatchEvents(
+            rawEvents.map((ev: Record<string, unknown>) => ({
+              id: String(ev.id ?? ""),
+              title: String(ev.name ?? ev.title ?? "公式コンボイ"),
+              departure:
+                (ev.departureJa as string | null) ??
+                (ev.departure as string | null) ??
+                null,
+              destination:
+                (ev.destinationJa as string | null) ??
+                (ev.destination as string | null) ??
+                null,
+              startAt: String(ev.startAt ?? ""),
+              meetupAt: (ev.meetupAt as string | null) ?? null,
+              parkingImageUrl: (ev.parkingImageUrl as string | null) ?? null,
+              mapImageUrl: (ev.mapImageUrl as string | null) ?? null,
+              server:
+                (ev.serverName as string | null) ??
+                (ev.server as string | null) ??
+                null,
+            }))
+          );
         }
       } catch {
         // Ignore offline errors
@@ -478,7 +611,30 @@ function App() {
         );
         if (res.ok) {
           const data = await res.json();
-          const list: TachographMessageItem[] = data.messages || [];
+          const rawList = Array.isArray(data?.messages) ? data.messages : [];
+          const list: TachographMessageItem[] = rawList.map(
+            (m: Record<string, unknown>) => {
+              const senderUser = m.senderUser as
+                | { name?: string | null }
+                | undefined;
+              const isToVehicle =
+                m.direction === "office_to_driver" ||
+                m.direction === "to_vehicle";
+              return {
+                id: String(m.id ?? ""),
+                direction: isToVehicle ? "to_vehicle" : "from_vehicle",
+                senderName:
+                  (m.senderName as string | null) ?? senderUser?.name ?? null,
+                content: String(m.content ?? ""),
+                quickReply:
+                  (m.quickReply as string | null) ??
+                  (m.messageType as string | null) ??
+                  null,
+                isRead: Boolean(m.isRead),
+                createdAt: String(m.createdAt ?? ""),
+              };
+            }
+          );
           setOfficeMessages(list);
           if (speakUnread) {
             const firstUnread = list.find(
@@ -529,17 +685,18 @@ function App() {
   }, [portalUrl]);
 
   const fetchProfileWithToken = useCallback(
-    async (token: string) => {
+    async (token: string, autoPopulateLogin = false) => {
       if (!token) return;
       setTelemetryToken(token);
       try {
         const res = await fetch(`${portalUrl}/api/desktop/auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ telemetryToken: token }),
         });
         if (res.ok) {
           const data = await res.json();
+          setIsOnline(true);
           if (data.wsAuthToken) {
             wsAuthTokenRef.current = data.wsAuthToken;
           }
@@ -547,23 +704,31 @@ function App() {
             setFeatureFlags((prev) => ({ ...prev, ...data.featureFlags }));
           }
           if (data.user) {
-            setExpectedEmployeeId(data.user.employeeId || "");
-            const fetchedName = data.user.name || "名称未設定";
+            const empId = String(data.user.employeeId || "");
+            const fetchedName = String(data.user.name || "名称未設定");
+            const allowCities = Boolean(
+              data.user.canSyncCities ?? data.canSyncCities
+            );
+            setExpectedEmployeeId(empId);
             profileNameRef.current = fetchedName;
-            setLoginName(fetchedName);
-            setUserSteamId(data.user.steamId || "");
-            setUserAvatar(data.user.avatar || null);
-            setDriverRank(data.user.driverRank || "DRIVER");
-            setCanSyncCities(Boolean(data.canSyncCities));
-            if (data.user.employeeId) {
-              setLoginId(data.user.employeeId);
+            setUserSteamId(String(data.user.steamId || ""));
+            setCanSyncCities(allowCities);
+
+            if (autoPopulateLogin) {
+              setLoginId(empId);
+              setLoginName(fetchedName);
+              if (currentViewRef.current === "login" && empId) {
+                playDtsChime("confirm", voiceEnabledRef.current);
+                setCurrentView("pre_departure");
+              }
             }
+
             syncInstalledDlcs(token);
             fetchDispatchAndEvents(token);
             fetchOfficeMessages(token, false);
             fetchHazardHotspots();
 
-            if (data.canSyncCities) {
+            if (allowCities) {
               invoke<CitySyncSummary[]>("sync_official_cities", {
                 token,
                 force: false,
@@ -585,6 +750,15 @@ function App() {
       fetchHazardHotspots,
     ]
   );
+
+  // Splash 3s auto-transition matching real DTS-G1D boot sequence
+  useEffect(() => {
+    if (currentView !== "splash") return;
+    const t = setTimeout(() => {
+      setCurrentView("login");
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [currentView]);
 
   // Initial Startup Effect
   useEffect(() => {
@@ -628,7 +802,7 @@ function App() {
         }
         setVoiceEnabled(cfg.voice_enabled ?? true);
         if (cfg.telemetry_token) {
-          fetchProfileWithToken(cfg.telemetry_token);
+          fetchProfileWithToken(cfg.telemetry_token, false);
         }
       })
       .catch(() => {});
@@ -647,7 +821,7 @@ function App() {
 
     const unlistenAuth = listen<string>("auth_success", (event) => {
       if (event.payload) {
-        fetchProfileWithToken(event.payload);
+        fetchProfileWithToken(event.payload, true);
       }
     });
 
@@ -702,9 +876,9 @@ function App() {
           setModalProposal({
             open: true,
             workType: wt,
-            title: "地点連動・作業記録確認",
+            title: "通知",
             message: `${p.reason}。作業を開始しますか？`,
-            subMessage: "カウントダウン終了で自動確定します",
+            subMessage: "6秒後に自動で確定します",
             countdown: 6,
           });
         }
@@ -753,21 +927,25 @@ function App() {
         invoke<WorkState>("set_detailed_work_type", { workType: wt })
           .then((ws) => {
             setWorkState(ws);
+            setActiveWorkDisplayLabel(ws.work_status_label || "");
             setCurrentView(wt === "driving" ? "driving" : "active_work");
           })
           .catch(() => {});
       }
     );
 
-    const unlistenCompanionSos = listen<boolean>("companion_sos_toggle", () => {
-      const nextSos = !workStateRef.current.is_sos;
-      invoke<WorkState>("trigger_sos", {
-        active: nextSos,
-        reason: "LANコンパニオンからの緊急SOS",
-      })
-        .then((ws) => setWorkState(ws))
-        .catch(() => {});
-    });
+    const unlistenCompanionSos = listen<boolean>(
+      "companion_sos_toggle",
+      () => {
+        const nextSos = !workStateRef.current.is_sos;
+        invoke<WorkState>("trigger_sos", {
+          active: nextSos,
+          reason: "LANコンパニオンからの緊急SOS",
+        })
+          .then((ws) => setWorkState(ws))
+          .catch(() => {});
+      }
+    );
 
     const unlistenUploaded = listen<SessionUploadSummary>(
       "tachograph_session_uploaded",
@@ -778,6 +956,8 @@ function App() {
 
     const unlistenReset = listen("reset_view", () => {
       if (workStateRef.current.status === "Idle") {
+        setLoginId("");
+        setLoginName("乗務員不明");
         setCurrentView("splash");
       }
     });
@@ -796,7 +976,7 @@ function App() {
     };
   }, [fetchProfileWithToken, telemetryToken]);
 
-  // Clock & Portal Connectivity + Telemetry Poll Fallback
+  // Clock Sync (/api/desktop/time returns { serverTime }) & Wait/Rest Alarm Ticker
   useEffect(() => {
     let timeOffset = 0;
 
@@ -808,7 +988,10 @@ function App() {
           const data = await res.json();
           const end = Date.now();
           const latency = (end - start) / 2;
-          timeOffset = data.timestamp + latency - end;
+          const serverMs = Number(data?.serverTime ?? data?.timestamp);
+          if (Number.isFinite(serverMs)) {
+            timeOffset = serverMs + latency - end;
+          }
           setIsOnline(true);
         } else {
           setIsOnline(false);
@@ -822,11 +1005,23 @@ function App() {
     const syncTimer = setInterval(syncServerTime, 15000);
 
     const clockTimer = setInterval(() => {
-      const now = new Date(Date.now() + timeOffset);
-      const hh = String(now.getHours()).padStart(2, "0");
-      const mm = String(now.getMinutes()).padStart(2, "0");
-      const ss = String(now.getSeconds()).padStart(2, "0");
-      setTime(`${hh}:${mm}:${ss}`);
+      const nowMs = Date.now();
+      setTime(formatClockHm(nowMs + (Number.isFinite(timeOffset) ? timeOffset : 0)));
+
+      const target = alarmTargetMsRef.current;
+      if (target !== null) {
+        const diffMs = target - nowMs;
+        if (diffMs <= 0) {
+          alarmTargetMsRef.current = null;
+          setAlarmTargetMs(null);
+          setAlarmMinutesRemaining(null);
+          setAlarmTriggeredModal(true);
+          playDtsChime("critical", voiceEnabledRef.current);
+          speakJapanese("設定した時間になりました。", voiceEnabledRef.current);
+        } else {
+          setAlarmMinutesRemaining(Math.max(1, Math.ceil(diffMs / 60000)));
+        }
+      }
     }, 1000);
 
     return () => {
@@ -849,7 +1044,7 @@ function App() {
     return () => clearInterval(poll);
   }, [telemetryToken, fetchOfficeMessages, fetchDispatchAndEvents]);
 
-  // 20Hz Telemetry Listener + WebSocket Sender + Smart Auto Driving Resume + Hazard Proximity
+  // 20Hz Telemetry Listener + WebSocket Sender + Real DTS-G1D Driving Transition + Hazard Warning
   useEffect(() => {
     let wsClient: WebSocket | null = null;
     let lastSendTime = 0;
@@ -904,25 +1099,42 @@ function App() {
       const ev = event.payload;
       setTelemetry(ev);
 
-      // Smart Auto Resume: when truck starts driving (> 10 km/h) during non-driving active work
+      const currSpeed = Math.abs(ev.speed || 0);
+      const prevSpeed = prevSpeedRef.current;
+      prevSpeedRef.current = currSpeed;
+
       const ws = workStateRef.current;
-      if (
-        ws.status !== "Idle" &&
-        ws.work_type !== "driving" &&
-        ws.work_type !== "ferry" &&
-        ws.work_type !== "train" &&
-        Math.abs(ev.speed) > 10 &&
-        !ev.paused
-      ) {
-        if (ws.is_smart_auto_mode) {
-          invoke<WorkState>("set_detailed_work_type", {
-            workType: "driving",
-          })
+      if (ws.status !== "Idle" && !ev.paused && currSpeed > 5) {
+        if (
+          ws.work_type !== "driving" &&
+          ws.work_type !== "ferry" &&
+          ws.work_type !== "train" &&
+          ws.is_smart_auto_mode
+        ) {
+          const finishLoading = ws.work_type === "loading";
+          Promise.resolve(
+            finishLoading && !ws.is_loaded
+              ? invoke<WorkState>("set_loaded_state", { isLoaded: true })
+              : ws
+          )
+            .then(() =>
+              invoke<WorkState>("set_detailed_work_type", {
+                workType: "driving",
+              })
+            )
             .then((updated) => {
               setWorkState(updated);
-              setCurrentView((v) => (v === "active_work" ? "driving" : v));
+              setActiveWorkDisplayLabel("");
+              if (currentViewRef.current === "active_work") {
+                setCurrentView("driving");
+              }
             })
             .catch(() => {});
+        } else if (
+          prevSpeed <= 5 &&
+          currentViewRef.current === "work_menu"
+        ) {
+          setCurrentView("driving");
         }
       }
 
@@ -930,7 +1142,7 @@ function App() {
       if (
         featureFlagsRef.current.feat_hazard_heatmap &&
         hazardSpots.length > 0 &&
-        Math.abs(ev.speed) > 25
+        currSpeed > 25
       ) {
         const near = hazardSpots.find((h) => {
           const dx = ev.x - h.x;
@@ -939,7 +1151,7 @@ function App() {
         });
         if (near) {
           setHazardWarningText(
-            `注意: 急減速・ヒヤリハット多発地点 (${near.count}件)`
+            `注意: 急減速多発地点 (${near.count}件)`
           );
           const nowMs = Date.now();
           if (nowMs - lastHazardAlertTimeRef.current > 90000) {
@@ -1093,31 +1305,54 @@ function App() {
     };
   }, [userSteamId, loginName, hazardSpots]);
 
-  // Numpad + / - Hotkeys for Map Zoom and Fullscreen Switch
+  const requestNavFullscreen = useCallback(() => {
+    if (isFullScreenMapRef.current) {
+      playDtsChime("beep", voiceEnabledRef.current);
+      setIsFullScreenMap(false);
+    } else {
+      playDtsChime("beep", voiceEnabledRef.current);
+      setNavFullscreenConfirm(true);
+    }
+  }, []);
+
+  const confirmEnterFullscreenMap = useCallback(() => {
+    setNavFullscreenConfirm(false);
+    setCurrentView("nav");
+    setIsFullScreenMap(true);
+    playDtsChime("confirm", voiceEnabledRef.current);
+    setNavFullscreenHint(true);
+    setTimeout(() => {
+      setNavFullscreenHint(false);
+    }, 2000);
+  }, []);
+
+  // Numpad + / - Hotkeys matching real hardware top physical + / - buttons
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "NumpadAdd" || e.code === "NumpadSubtract") {
         e.preventDefault();
         if (!pressTimer.current) {
           pressTimer.current = setTimeout(() => {
+            pressTimer.current = null;
             if (e.code === "NumpadSubtract") {
-              setCurrentView((prev) => {
-                const target = previousView;
-                setPreviousView(prev);
-                return target;
-              });
-              setIsFullScreenMap(false);
+              if (isFullScreenMapRef.current) {
+                setIsFullScreenMap(false);
+                playDtsChime("beep", voiceEnabledRef.current);
+              } else if (currentViewRef.current === "nav") {
+                const target =
+                  previousViewRef.current && previousViewRef.current !== "nav"
+                    ? previousViewRef.current
+                    : "work_menu";
+                setCurrentView(target);
+              }
             } else if (e.code === "NumpadAdd") {
-              setCurrentView((prev) => {
-                if (prev === "nav") {
-                  setIsFullScreenMap((f) => !f);
-                  return prev;
-                } else {
-                  setPreviousView(prev);
-                  setIsFullScreenMap(true);
-                  return "nav";
-                }
-              });
+              if (currentViewRef.current === "nav") {
+                requestNavFullscreen();
+              } else {
+                setPreviousView(currentViewRef.current);
+                setCurrentView("nav");
+                setNavFullscreenConfirm(true);
+              }
             }
           }, 800);
         }
@@ -1130,7 +1365,10 @@ function App() {
         if (pressTimer.current) {
           clearTimeout(pressTimer.current);
           pressTimer.current = null;
-          if (currentView === "nav" && iframeRef.current?.contentWindow) {
+          if (
+            currentViewRef.current === "nav" &&
+            iframeRef.current?.contentWindow
+          ) {
             iframeRef.current.contentWindow.postMessage(
               e.code === "NumpadAdd" ? "zoomIn" : "zoomOut",
               "*"
@@ -1146,7 +1384,7 @@ function App() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [currentView, previousView]);
+  }, [requestNavFullscreen]);
 
   const isGameConnected =
     telemetry.timestamp > 0 &&
@@ -1161,68 +1399,121 @@ function App() {
   };
 
   const handleConfirmLogin = async () => {
-    if (!loginId) return;
-    if (expectedEmployeeId) {
-      if (loginId === expectedEmployeeId) {
-        playDtsChime("confirm", voiceEnabledRef.current);
-        speakJapanese(
-          `${loginName}さん、認証を確認しました。始業点検を行ってください。`,
-          voiceEnabledRef.current
-        );
-        setCurrentView("pre_departure");
-      } else {
-        playDtsChime("warning", voiceEnabledRef.current);
-        setLoginId("");
-        await message("乗務員番号が一致しません。", {
-          title: "認証エラー",
-          kind: "error",
-        });
-      }
-    } else {
+    if (!expectedEmployeeId) {
       await openLoginBrowser();
+      return;
+    }
+    if (!loginId) {
+      setLoginId(expectedEmployeeId);
+    }
+    const checkId = loginId || expectedEmployeeId;
+    if (checkId === expectedEmployeeId) {
+      const resolvedName =
+        profileNameRef.current ||
+        (loginName !== "乗務員不明" ? loginName : "認証ドライバー");
+      setLoginId(checkId);
+      setLoginName(resolvedName);
+      playDtsChime("confirm", voiceEnabledRef.current);
+      speakJapanese(
+        `${resolvedName}さん、認証を確認しました。`,
+        voiceEnabledRef.current
+      );
+      setCurrentView("pre_departure");
+    } else {
+      playDtsChime("warning", voiceEnabledRef.current);
+      setLoginId("");
+      setLoginName("乗務員不明");
+      await message("乗務員番号が一致しません。", {
+        title: "認証エラー",
+        kind: "error",
+      });
     }
   };
 
   const handleIcCardFastAuth = () => {
-    if (expectedEmployeeId) {
-      setLoginId(expectedEmployeeId);
-      playDtsChime("confirm", voiceEnabledRef.current);
-      speakJapanese(
-        `IC免許証を確認しました。${loginName}さん、本日もご安全に。`,
-        voiceEnabledRef.current
-      );
-      setCurrentView("pre_departure");
-    }
+    if (!expectedEmployeeId) return;
+    const resolvedName =
+      profileNameRef.current ||
+      (loginName !== "乗務員不明" ? loginName : "認証ドライバー");
+    setLoginId(expectedEmployeeId);
+    setLoginName(resolvedName);
+    playDtsChime("confirm", voiceEnabledRef.current);
+    speakJapanese(
+      `IC免許証を確認しました。${resolvedName}さん、本日もご安全に。`,
+      voiceEnabledRef.current
+    );
+    setCurrentView("pre_departure");
   };
 
-  const handleDepart = async () => {
+  const handleDepart = async (twoManMode = false) => {
     try {
       setLastFinishedSummary(null);
       setAiReviewText(null);
+      setActiveWorkDisplayLabel("");
       const ws = await invoke<WorkState>("set_detailed_work_type", {
         workType: "driving",
       });
       setWorkState(ws);
       playDtsChime("departure", voiceEnabledRef.current);
       speakJapanese(
-        "出庫します。シートベルトを着用し、本日も安全運転でお願いします。",
+        `${
+          twoManMode ? "ツーマン運行で" : ""
+        }出庫します。安全運転でお願いします。`,
         voiceEnabledRef.current
       );
-      setCurrentView("driving");
+      const movingNow = Math.abs(telemetry.speed || 0) > 5;
+      setCurrentView(movingNow ? "driving" : "work_menu");
     } catch (e) {
       console.error(e);
     }
   };
 
-  const handleSelectWorkType = async (wt: WorkType, label: string) => {
+  const handleSelectWorkType = async (wt: WorkType, displayLabel: string) => {
     try {
       const ws = await invoke<WorkState>("set_detailed_work_type", {
         workType: wt,
       });
       setWorkState(ws);
+      setActiveWorkDisplayLabel(displayLabel || ws.work_status_label || "");
+      if (wt === "driving") {
+        playDtsChime("confirm", voiceEnabledRef.current);
+        setCurrentView("driving");
+      } else {
+        playDtsChime("confirm", voiceEnabledRef.current);
+        speakJapanese(`${displayLabel}を開始します。`, voiceEnabledRef.current);
+        setCurrentView("active_work");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleFinishActiveWork = async () => {
+    try {
+      const wasLoading = workStateRef.current.work_type === "loading";
+      setAlarmTargetMs(null);
+      setAlarmMinutesRemaining(null);
+      if (wasLoading && !workStateRef.current.is_loaded) {
+        await invoke<WorkState>("set_loaded_state", { isLoaded: true });
+      }
+      const ws = await invoke<WorkState>("set_detailed_work_type", {
+        workType: "driving",
+      });
+      setWorkState(ws);
+      setActiveWorkDisplayLabel("");
       playDtsChime("confirm", voiceEnabledRef.current);
-      speakJapanese(`${label}を開始します。`, voiceEnabledRef.current);
-      setCurrentView(wt === "driving" ? "driving" : "active_work");
+      const movingNow = Math.abs(telemetry.speed || 0) > 5;
+      setCurrentView(movingNow ? "driving" : "work_menu");
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSetRoadType = async (roadType: RoadType) => {
+    try {
+      const ws = await invoke<WorkState>("set_road_type", { roadType });
+      setWorkState(ws);
+      playDtsChime("beep", voiceEnabledRef.current);
     } catch (e) {
       console.error(e);
     }
@@ -1231,13 +1522,7 @@ function App() {
   const handleCycleRoadType = async () => {
     const idx = ROAD_CYCLE.indexOf(workState.road_type);
     const next = ROAD_CYCLE[(idx + 1) % ROAD_CYCLE.length];
-    try {
-      const ws = await invoke<WorkState>("set_road_type", { roadType: next });
-      setWorkState(ws);
-      playDtsChime("beep", voiceEnabledRef.current);
-    } catch (e) {
-      console.error(e);
-    }
+    await handleSetRoadType(next);
   };
 
   const handleToggleLoaded = async () => {
@@ -1298,6 +1583,18 @@ function App() {
     }
   };
 
+  const handleToggleVoice = async (enabled: boolean) => {
+    setVoiceEnabled(enabled);
+    try {
+      const cfg = await invoke<AppConfig>("get_config");
+      await invoke("save_app_preferences", {
+        preferences: { ...cfg, voice_enabled: enabled },
+      });
+    } catch {
+      // Ignore
+    }
+  };
+
   const handleToggleSos = async () => {
     const nextActive = !workState.is_sos;
     try {
@@ -1341,6 +1638,7 @@ function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             token: telemetryToken,
+            sessionId: workState.active_session_id || undefined,
             metrics: {
               distanceDrivenKm: m.distanceKm,
               gScore: m.gScore,
@@ -1358,9 +1656,10 @@ function App() {
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.review) {
-            setAiReviewText(data.review);
-            speakJapanese(data.review, voiceEnabledRef.current);
+          const reviewText = data.aiReviewText || data.review;
+          if (reviewText) {
+            setAiReviewText(reviewText);
+            speakJapanese(reviewText, voiceEnabledRef.current);
           }
         }
       } catch {
@@ -1375,6 +1674,8 @@ function App() {
   const handleConfirmReturnGarage = async () => {
     try {
       setIsFinishingDuty(true);
+      setAlarmTargetMs(null);
+      setAlarmMinutesRemaining(null);
       const snapshot = {
         distanceKm: workState.distance_driven_km,
         gScore: workState.g_score,
@@ -1394,10 +1695,7 @@ function App() {
       setWorkState(ws);
 
       playDtsChime("return", voiceEnabledRef.current);
-      speakJapanese(
-        "帰庫処理が完了しました。本日の運行日報を送信しました。お疲れ様でした。",
-        voiceEnabledRef.current
-      );
+      speakJapanese("お疲れ様でした。", voiceEnabledRef.current);
 
       if (featureFlags.feat_ai_review) {
         handleRequestAiReview(snapshot);
@@ -1487,7 +1785,7 @@ function App() {
         body: JSON.stringify({
           token: telemetryToken,
           content,
-          quickReply: quickReplyCode,
+          messageType: quickReplyCode,
         }),
       });
       if (res.ok) {
@@ -1522,6 +1820,17 @@ function App() {
     }
   };
 
+  const handleSetAlarmMinutes = (minutes: number | null) => {
+    if (minutes === null) {
+      setAlarmTargetMs(null);
+      setAlarmMinutesRemaining(null);
+    } else {
+      setAlarmTargetMs(Date.now() + minutes * 60 * 1000);
+      setAlarmMinutesRemaining(minutes);
+      playDtsChime("confirm", voiceEnabledRef.current);
+    }
+  };
+
   const unreadMessageCount = officeMessages.filter(
     (m) => m.direction === "to_vehicle" && !m.isRead
   ).length;
@@ -1530,6 +1839,17 @@ function App() {
     dispatchEvents.length;
 
   const showChrome = currentView !== "splash" && !isFullScreenMap;
+  const isDrivingMoving =
+    currentView === "driving" && Math.abs(telemetry.speed || 0) > 1;
+  const isActiveWork = currentView === "active_work";
+
+  const handleReturnFromNav = () => {
+    if (workState.status === "Idle") {
+      navigateTo(loginId ? "pre_departure" : "login");
+    } else {
+      navigateTo("work_menu");
+    }
+  };
 
   return (
     <DtsShell
@@ -1539,26 +1859,19 @@ function App() {
         showChrome ? (
           <TopStatusBar
             time={time}
-            appVersion={appVersion}
             isOnline={isOnline}
             isGameConnected={isGameConnected}
             telemetry={telemetry}
             workState={workState}
             overlayState={overlayState}
-            featureFlags={featureFlags}
-            unreadMessageCount={unreadMessageCount}
-            activeDispatchCount={activeDispatchCount}
             currentView={currentView}
-            onNavigate={navigateTo}
             onToggleOverlay={handleToggleOverlay}
             onToggleSos={handleToggleSos}
           />
         ) : null
       }
       rightSidebar={
-        showChrome &&
-        currentView !== "login" &&
-        currentView !== "pre_departure" ? (
+        showChrome ? (
           <RightSidebar
             currentView={currentView}
             workState={workState}
@@ -1566,17 +1879,19 @@ function App() {
             unreadMessageCount={unreadMessageCount}
             compact={currentView === "nav"}
             isCapturingDashcam={isCapturingDashcam}
+            isDrivingMoving={isDrivingMoving}
+            isActiveWork={isActiveWork}
             onNavigate={navigateTo}
             onCycleRoadType={handleCycleRoadType}
             onToggleLoaded={handleToggleLoaded}
             onCaptureDashcam={handleCaptureDashcam}
+            onReturnFromNav={handleReturnFromNav}
+            onOpenSearchFromNav={() => navigateTo("dispatch")}
           />
         ) : null
       }
       bottomBar={
-        showChrome &&
-        currentView !== "login" &&
-        currentView !== "pre_departure" ? (
+        showChrome ? (
           <BottomTelemetryBar
             workState={workState}
             onFlushQueue={handleFlushQueue}
@@ -1587,7 +1902,7 @@ function App() {
       {currentView === "splash" && (
         <SplashView
           appVersion={appVersion}
-          onStart={() => navigateTo("login")}
+          onStart={() => setCurrentView("login")}
         />
       )}
 
@@ -1596,13 +1911,20 @@ function App() {
           loginId={loginId}
           loginName={loginName}
           expectedEmployeeId={expectedEmployeeId}
-          driverRank={driverRank}
-          avatarUrl={userAvatar}
+          appVersion={appVersion}
           icLicenseEnabled={featureFlags.feat_ic_license}
           onDigit={(d) => {
+            playDtsChime("beep", voiceEnabledRef.current);
             if (loginId.length < 8) setLoginId((v) => v + d);
           }}
-          onBackspace={() => setLoginId((v) => v.slice(0, -1))}
+          onBackspace={() => {
+            playDtsChime("beep", voiceEnabledRef.current);
+            setLoginId((v) => v.slice(0, -1));
+          }}
+          onClear={() => {
+            playDtsChime("beep", voiceEnabledRef.current);
+            setLoginId("");
+          }}
           onConfirmLogin={handleConfirmLogin}
           onIcCardFastAuth={handleIcCardFastAuth}
           onOpenBrowserAuth={openLoginBrowser}
@@ -1613,13 +1935,8 @@ function App() {
         <PreDepartureView
           loginId={loginId}
           loginName={loginName}
-          canSyncCities={canSyncCities}
-          isSyncingDlc={isSyncingDlc}
-          isSyncingCities={isSyncingCities}
           citySyncResult={citySyncResult}
           activeDispatchCount={activeDispatchCount}
-          onSyncDlc={() => syncInstalledDlcs(undefined, true)}
-          onSyncCities={() => handleSyncCities(true, false)}
           onDepart={handleDepart}
           onBackToLogin={() => navigateTo("login")}
           onNavigate={navigateTo}
@@ -1629,11 +1946,13 @@ function App() {
       {currentView === "driving" && (
         <DrivingView
           pattern={drivingPattern}
+          loginName={loginName !== "乗務員不明" ? loginName : profileNameRef.current || "ドライバー"}
           telemetry={telemetry}
           workState={workState}
           featureFlags={featureFlags}
           hazardWarningText={hazardWarningText}
           onChangePattern={(p) => setDrivingPattern(p)}
+          onSetRoadType={handleSetRoadType}
           onNavigate={navigateTo}
           onScsInputCommand={(cmd) => {
             invoke("send_scs_input_command", { command: cmd }).catch(() => {});
@@ -1644,11 +1963,21 @@ function App() {
 
       {currentView === "work_menu" && (
         <WorkMenuView
+          canSyncCities={canSyncCities}
           onSelectWorkType={handleSelectWorkType}
           onNavigate={navigateTo}
-          onSwitchToCompliancePattern={() => {
-            setDrivingPattern("C");
+          onOpenDrivingPattern={(p) => {
+            setDrivingPattern(p);
             navigateTo("driving");
+          }}
+          onToggleOverlay={handleToggleOverlay}
+          onToggleVoice={() => handleToggleVoice(!voiceEnabled)}
+          onSyncDlc={() => syncInstalledDlcs(undefined, true)}
+          onSyncCities={() => handleSyncCities(true, false)}
+          onFlushQueue={handleFlushQueue}
+          onScsInputCommand={(cmd) => {
+            invoke("send_scs_input_command", { command: cmd }).catch(() => {});
+            playDtsChime("beep", voiceEnabledRef.current);
           }}
           onTriggerSos={handleToggleSos}
         />
@@ -1658,8 +1987,16 @@ function App() {
         <ActiveWorkView
           workState={workState}
           telemetry={telemetry}
-          onResumeDriving={() => handleSelectWorkType("driving", "走行")}
-          onOpenWorkMenu={() => navigateTo("work_menu")}
+          displayLabel={activeWorkDisplayLabel}
+          alarmMinutesRemaining={alarmMinutesRemaining}
+          onSetAlarmMinutes={handleSetAlarmMinutes}
+          onToggleLoaded={handleToggleLoaded}
+          onFinishWork={handleFinishActiveWork}
+          onOpenDrivingStatus={() => {
+            setDrivingPattern("C");
+            navigateTo("driving");
+          }}
+          onNavigate={navigateTo}
         />
       )}
 
@@ -1677,7 +2014,8 @@ function App() {
             null
           }
           upcomingEvent={dispatchEvents[0] || null}
-          onToggleFullScreen={() => setIsFullScreenMap((v) => !v)}
+          onRequestToggleFullScreen={requestNavFullscreen}
+          onNavigate={navigateTo}
         />
       )}
 
@@ -1688,7 +2026,7 @@ function App() {
           isLoading={isLoadingDispatch}
           onRefresh={() => fetchDispatchAndEvents()}
           onUpdateOrderStatus={handleUpdateOrderStatus}
-          onNavigate={navigateTo}
+          onBack={navigateBack}
         />
       )}
 
@@ -1699,7 +2037,7 @@ function App() {
           onRefresh={() => fetchOfficeMessages(undefined, false)}
           onSendQuickReply={handleSendQuickReply}
           onReadAloud={(txt) => speakJapanese(txt, true)}
-          onNavigate={navigateTo}
+          onBack={navigateBack}
         />
       )}
 
@@ -1713,6 +2051,7 @@ function App() {
           lastFinishedSummary={lastFinishedSummary}
           onConfirmReturnGarage={handleConfirmReturnGarage}
           onRequestAiReview={() => handleRequestAiReview()}
+          onBack={navigateBack}
           onNavigate={navigateTo}
         />
       )}
@@ -1723,13 +2062,15 @@ function App() {
           isRunning={isRunningDiagnostics}
           isRepairing={isRepairingPlugin}
           canSyncCities={canSyncCities}
+          isSyncingDlc={isSyncingDlc}
           isSyncingCities={isSyncingCities}
           citySyncResult={citySyncResult}
           onRunDiagnostics={handleRunDiagnostics}
           onRepairPlugin={handleRepairPlugin}
           onFlushQueue={handleFlushQueue}
+          onSyncDlc={() => syncInstalledDlcs(undefined, true)}
           onSyncCities={() => handleSyncCities(true, false)}
-          onNavigate={navigateTo}
+          onBack={navigateBack}
         />
       )}
 
@@ -1746,17 +2087,7 @@ function App() {
               .then((ws) => setWorkState(ws))
               .catch(() => {});
           }}
-          onToggleVoice={async (enabled) => {
-            setVoiceEnabled(enabled);
-            try {
-              const cfg = await invoke<AppConfig>("get_config");
-              await invoke("save_app_preferences", {
-                preferences: { ...cfg, voice_enabled: enabled },
-              });
-            } catch {
-              // Ignore
-            }
-          }}
+          onToggleVoice={handleToggleVoice}
           onChangeDrivingPattern={async (p) => {
             setDrivingPattern(p);
             try {
@@ -1785,13 +2116,14 @@ function App() {
             }
           }}
           onToggleFeatureFlag={handleToggleFeatureFlag}
-          onNavigate={navigateTo}
+          onBack={navigateBack}
         />
       )}
 
+      {/* Location-linked Smart Work Proposal Modal */}
       <GreenModal
         open={Boolean(modalProposal?.open)}
-        title={modalProposal?.title || "作業確認"}
+        title={modalProposal?.title || "通知"}
         message={modalProposal?.message || ""}
         subMessage={modalProposal?.subMessage}
         autoConfirmSeconds={modalProposal?.countdown}
@@ -1803,6 +2135,38 @@ function App() {
           }
         }}
         onCancel={() => setModalProposal(null)}
+      />
+
+      {/* Nav Fullscreen Confirmation Modal (#70: 234104.png) */}
+      <GreenModal
+        open={navFullscreenConfirm}
+        title="通知"
+        message="ナビを全画面表示しますか？"
+        cancelLabel="取消"
+        confirmLabel="確認"
+        onConfirm={confirmEnterFullscreenMap}
+        onCancel={() => setNavFullscreenConfirm(false)}
+      />
+
+      {/* Nav Fullscreen Return Hint (#71: 234113.png) */}
+      <GreenModal
+        open={navFullscreenHint}
+        title="通知"
+        message="ーボタン長押しで戻ります"
+        hideButtons
+        onConfirm={() => setNavFullscreenHint(false)}
+        onCancel={() => setNavFullscreenHint(false)}
+      />
+
+      {/* Wait / Rest Alarm Trigger Modal (#60: 233844.png) */}
+      <GreenModal
+        open={alarmTriggeredModal}
+        title="待機中アラーム。"
+        message="時間になりました。"
+        confirmLabel="確定"
+        singleConfirm
+        onConfirm={() => setAlarmTriggeredModal(false)}
+        onCancel={() => setAlarmTriggeredModal(false)}
       />
     </DtsShell>
   );

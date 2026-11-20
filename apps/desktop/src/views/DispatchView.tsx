@@ -1,18 +1,8 @@
 import React, { useState } from "react";
-import {
-  ArrowRight,
-  Calendar,
-  CheckCircle2,
-  FileText,
-  Image as ImageIcon,
-  Play,
-  RefreshCw,
-  X,
-} from "lucide-react";
+import { FileText, Image as ImageIcon, RefreshCw, X } from "lucide-react";
 import type {
   DispatchEventItem,
   DispatchOrderItem,
-  DtsViewId,
 } from "../types/tachograph";
 
 interface DispatchViewProps {
@@ -21,7 +11,7 @@ interface DispatchViewProps {
   isLoading: boolean;
   onRefresh: () => void;
   onUpdateOrderStatus: (orderId: string, action: "accept" | "complete") => void;
-  onNavigate: (view: DtsViewId) => void;
+  onBack: () => void;
 }
 
 export const DispatchView: React.FC<DispatchViewProps> = ({
@@ -30,72 +20,60 @@ export const DispatchView: React.FC<DispatchViewProps> = ({
   isLoading,
   onRefresh,
   onUpdateOrderStatus,
-  onNavigate,
+  onBack,
 }) => {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   return (
-    <div className="flex-1 bg-[#18181f] flex flex-col p-3.5 justify-between overflow-hidden relative">
-      <div className="flex items-center justify-between border-b border-zinc-800 pb-2 shrink-0">
-        <span className="text-sm font-black text-teal-300 flex items-center gap-1.5">
-          <FileText className="w-4 h-4" />
-          運行指示書 ＆ 公式コンボイ配車一覧
+    <div className="flex-1 bg-[#0c0f1a] flex flex-col justify-between overflow-hidden relative min-h-0">
+      <div className="h-11 bg-gradient-to-b from-[#3fa7da] to-[#2e8ec0] px-4 flex items-center justify-between text-white shrink-0">
+        <span className="flex items-center gap-2 font-bold text-lg">
+          <FileText className="w-5 h-5" />
+          運行指示書
         </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onRefresh}
-            className="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold flex items-center gap-1"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`}
-            />
-            更新
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate("driving")}
-            className="px-2.5 py-1 rounded bg-[#187f82] hover:bg-[#1ca0a4] text-white text-xs font-bold"
-          >
-            走行画面へ
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="px-2.5 py-1 bg-[#1e6a92] hover:bg-[#247ba8] text-white text-xs font-bold flex items-center gap-1 rounded-[2px]"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+          更新
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-2 my-2 pr-1">
+      <div className="flex-1 overflow-y-auto divide-y divide-[#25283d] px-3 py-1">
         {orders.map((ord) => (
           <div
             key={ord.id}
-            className="bg-[#23232c] border border-zinc-700 rounded p-2.5 flex items-center justify-between gap-2"
+            className="py-2.5 flex items-center justify-between gap-2"
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
+                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded-[2px] ${
                     ord.status === "in_progress"
-                      ? "bg-sky-500/20 text-sky-300"
-                      : "bg-amber-500/20 text-amber-300"
+                      ? "bg-[#3ca4d4] text-white"
+                      : "bg-[#4e4c73] text-white"
                   }`}
                 >
-                  {ord.status === "in_progress" ? "運行中" : "配車指示"}
+                  {ord.status === "in_progress" ? "運行中" : "指示"}
                 </span>
-                <span className="text-xs font-black text-white truncate">
+                <span className="text-sm font-bold text-white truncate">
                   {ord.title}
                 </span>
               </div>
-              <div className="text-[11px] text-zinc-300 flex items-center gap-1.5 mt-1">
-                <span>{ord.sourceCity || "指定なし"}</span>
-                <ArrowRight className="w-3 h-3 text-zinc-500" />
-                <span className="text-sky-300 font-bold">
+              <div className="text-xs text-zinc-300 mt-1">
+                {ord.sourceCity || "指定なし"} →{" "}
+                <span className="text-[#64c4ed] font-bold">
                   {ord.destinationCity || "指定なし"}
                 </span>
                 {ord.cargoName && (
-                  <span className="text-zinc-400">({ord.cargoName})</span>
+                  <span className="text-zinc-400 ml-1">({ord.cargoName})</span>
                 )}
               </div>
               {ord.notes && (
-                <div className="text-[10px] text-zinc-400 mt-0.5 truncate">
-                  指示備考: {ord.notes}
+                <div className="text-[11px] text-zinc-400 mt-0.5 truncate">
+                  {ord.notes}
                 </div>
               )}
             </div>
@@ -105,7 +83,7 @@ export const DispatchView: React.FC<DispatchViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setPreviewImage(ord.parkingImageUrl)}
-                  className="px-2 py-1.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1"
+                  className="px-2.5 py-1.5 bg-[#4e4c73] hover:bg-[#5c5a86] text-white text-xs font-bold rounded-[2px] flex items-center gap-1"
                 >
                   <ImageIcon className="w-3.5 h-3.5" />
                   駐車図
@@ -115,18 +93,16 @@ export const DispatchView: React.FC<DispatchViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onUpdateOrderStatus(ord.id, "accept")}
-                  className="px-2.5 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-black flex items-center gap-1"
+                  className="px-3 py-1.5 bg-[#3ca4d4] hover:bg-[#4cb4e4] text-white text-xs font-bold rounded-[2px]"
                 >
-                  <Play className="w-3 h-3 fill-current" />
                   受領
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => onUpdateOrderStatus(ord.id, "complete")}
-                  className="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-black flex items-center gap-1"
+                  className="px-3 py-1.5 bg-[#2cc938] hover:bg-[#25ad30] text-white text-xs font-bold rounded-[2px]"
                 >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
                   完了
                 </button>
               )}
@@ -137,28 +113,21 @@ export const DispatchView: React.FC<DispatchViewProps> = ({
         {events.map((ev) => (
           <div
             key={ev.id}
-            className="bg-[#202029] border border-zinc-800 rounded p-2.5 flex items-center justify-between gap-2"
+            className="py-2.5 flex items-center justify-between gap-2"
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[10px] font-black flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  公式イベント
+                <span className="px-1.5 py-0.5 bg-[#4e4c73] text-white text-[10px] font-bold rounded-[2px]">
+                  イベント
                 </span>
-                <span className="text-xs font-bold text-white truncate">
+                <span className="text-sm font-bold text-white truncate">
                   {ev.title}
                 </span>
               </div>
-              <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 mt-1">
-                <span>{ev.departure || "集合地"}</span>
-                <ArrowRight className="w-3 h-3 text-zinc-600" />
-                <span className="text-zinc-200">
-                  {ev.destination || "目的地"}
-                </span>
+              <div className="text-xs text-zinc-300 mt-1">
+                {ev.departure || "集合地"} → {ev.destination || "目的地"}
                 {ev.server && (
-                  <span className="font-mono text-[10px] text-zinc-500">
-                    [{ev.server}]
-                  </span>
+                  <span className="text-zinc-400 ml-1.5">[{ev.server}]</span>
                 )}
               </div>
             </div>
@@ -169,32 +138,42 @@ export const DispatchView: React.FC<DispatchViewProps> = ({
                 onClick={() =>
                   setPreviewImage(ev.parkingImageUrl || ev.mapImageUrl)
                 }
-                className="px-2.5 py-1.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-1 shrink-0"
+                className="px-2.5 py-1.5 bg-[#4e4c73] hover:bg-[#5c5a86] text-white text-xs font-bold rounded-[2px] flex items-center gap-1 shrink-0"
               >
                 <ImageIcon className="w-3.5 h-3.5" />
-                駐車場案内図
+                案内図
               </button>
             )}
           </div>
         ))}
 
         {orders.length === 0 && events.length === 0 && (
-          <div className="h-44 flex items-center justify-center text-xs text-zinc-500">
-            現在割り当てられている運行指示書・直近のコンボイ予定はありません
+          <div className="h-44 flex items-center justify-center text-xs text-zinc-400">
+            現在受信している運行指示書・イベント予定はありません
           </div>
         )}
+      </div>
+
+      <div className="bg-[#222436] px-3 py-2 border-t border-[#32344a] flex items-center justify-between shrink-0">
+        <button
+          type="button"
+          onClick={onBack}
+          className="bg-[#525074] hover:bg-[#62608a] text-white h-10 px-6 text-sm font-bold rounded-[2px]"
+        >
+          戻る
+        </button>
       </div>
 
       {previewImage && (
         <div className="absolute inset-0 z-30 bg-black/90 flex flex-col p-3">
           <div className="flex items-center justify-between pb-2">
-            <span className="text-xs font-bold text-amber-300">
-              駐車場・ルート案内画像プレビュー
+            <span className="text-xs font-bold text-[#64c4ed]">
+              駐車場案内画像
             </span>
             <button
               type="button"
               onClick={() => setPreviewImage(null)}
-              className="px-2.5 py-1 rounded bg-zinc-800 text-white text-xs font-bold flex items-center gap-1"
+              className="px-2.5 py-1 bg-[#4e4c73] text-white text-xs font-bold flex items-center gap-1 rounded-[2px]"
             >
               <X className="w-3.5 h-3.5" />
               閉じる
@@ -204,7 +183,7 @@ export const DispatchView: React.FC<DispatchViewProps> = ({
             <img
               src={previewImage}
               alt="Parking preview"
-              className="max-w-full max-h-full object-contain rounded"
+              className="max-w-full max-h-full object-contain"
             />
           </div>
         </div>
