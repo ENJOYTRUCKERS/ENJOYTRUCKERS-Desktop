@@ -1,19 +1,21 @@
 import React from "react";
-import {
-  Camera,
-  Gauge,
-  LayoutGrid,
-  Mail,
-  Map as MapIcon,
-  Route,
-  Truck,
-} from "lucide-react";
 import type {
   DesktopFeatureFlags,
   DtsViewId,
   RoadType,
   WorkState,
 } from "../../types/tachograph";
+import {
+  DtsCameraIcon,
+  DtsContactIcon,
+  DtsGrid3x3Icon,
+  DtsHighwayIcon,
+  DtsLocalRoadIcon,
+  DtsMapIcon,
+  DtsSearchIcon,
+  DtsTruckEmptyIcon,
+  DtsTruckLoadedIcon,
+} from "./DtsIcons";
 
 interface RightSidebarProps {
   currentView: DtsViewId;
@@ -22,10 +24,14 @@ interface RightSidebarProps {
   unreadMessageCount: number;
   compact?: boolean;
   isCapturingDashcam?: boolean;
+  isDrivingMoving?: boolean;
+  isActiveWork?: boolean;
   onNavigate: (view: DtsViewId) => void;
   onCycleRoadType: () => void;
   onToggleLoaded: () => void;
   onCaptureDashcam: () => void;
+  onReturnFromNav?: () => void;
+  onOpenSearchFromNav?: () => void;
 }
 
 const ROAD_LABELS: Record<RoadType, string> = {
@@ -42,122 +48,155 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   unreadMessageCount,
   compact = false,
   isCapturingDashcam = false,
+  isDrivingMoving = false,
+  isActiveWork = false,
   onNavigate,
   onCycleRoadType,
   onToggleLoaded,
   onCaptureDashcam,
+  onReturnFromNav,
+  onOpenSearchFromNav,
 }) => {
-  const widthClass = compact ? "w-16" : "w-24";
-  const btnBase =
-    "flex-1 flex flex-col items-center justify-center border-b border-zinc-800 transition-colors cursor-pointer select-none px-1";
+  const isHighwayLike =
+    workState.road_type === "highway" || workState.road_type === "private";
+
+  const widthClass = compact ? "w-[54px]" : "w-[126px]";
+  const activeStyle =
+    "bg-[#4e4c73] hover:bg-[#5c5a86] active:bg-[#3f3d60] text-white border-b border-[#242438] cursor-pointer";
+  const disabledStyle =
+    "bg-[#1b1c2a] text-[#55576b] border-b border-[#161724] cursor-not-allowed";
+
+  const roadDisabled = isActiveWork;
+  const loadedDisabled = isActiveWork;
+  const cameraDisabled = isCapturingDashcam || !featureFlags.feat_auto_dashcam;
+  const contactDisabled =
+    !compact && (isDrivingMoving || !featureFlags.feat_office_chat);
+
+  const layoutClass = compact
+    ? "flex-1 flex items-center justify-center relative select-none"
+    : "flex-1 flex flex-row items-center justify-start gap-2.5 px-3.5 relative select-none";
+
+  const roadIcon = isHighwayLike ? (
+    <DtsHighwayIcon className="w-5 h-5 shrink-0" />
+  ) : (
+    <DtsLocalRoadIcon className="w-5 h-5 shrink-0" />
+  );
+
+  const truckIcon = workState.is_loaded ? (
+    <DtsTruckLoadedIcon className="w-5 h-5 shrink-0" />
+  ) : (
+    <DtsTruckEmptyIcon className="w-5 h-5 shrink-0" />
+  );
 
   return (
     <aside
-      className={`${widthClass} bg-[#2b2b30] flex flex-col border-l border-zinc-800 z-10 shrink-0`}
+      className={`${widthClass} bg-[#1b1c2a] flex flex-col border-l border-[#242438] z-10 shrink-0`}
     >
-      {/* 1. 走行画面 ⇔ 作業メニュー */}
+      {/* 1. 撮影 (Dashcam) */}
       <button
-        onClick={() =>
-          onNavigate(currentView === "work_menu" ? "driving" : "work_menu")
-        }
-        className={`${btnBase} ${
-          currentView === "work_menu"
-            ? "bg-[#187f82] text-white"
-            : "bg-[#3d3d44] hover:bg-[#4c4c55] text-white"
-        }`}
+        type="button"
+        disabled={cameraDisabled}
+        onClick={onCaptureDashcam}
+        title="撮影"
+        className={`${layoutClass} ${cameraDisabled ? disabledStyle : activeStyle}`}
       >
-        {currentView === "work_menu" ? (
-          <Gauge className="w-5 h-5 mb-1" />
-        ) : (
-          <LayoutGrid className="w-5 h-5 mb-1" />
+        <DtsCameraIcon className="w-5 h-5 shrink-0" />
+        {!compact && (
+          <span className="text-[14px] font-bold tracking-wide">
+            {isCapturingDashcam ? "保存中" : "撮影"}
+          </span>
         )}
-        <span className="text-[11px] font-bold">
-          {currentView === "work_menu" ? "走行画面" : "作業選択"}
-        </span>
       </button>
 
-      {/* 2. ドラレコ撮影 */}
-      {featureFlags.feat_auto_dashcam && (
+      {/* 2. 道路区分 (一般道 / 高速道 / 市街地 / 専用道) */}
+      <button
+        type="button"
+        disabled={roadDisabled}
+        onClick={onCycleRoadType}
+        title={ROAD_LABELS[workState.road_type] || "一般道"}
+        className={`${layoutClass} ${roadDisabled ? disabledStyle : activeStyle}`}
+      >
+        {roadIcon}
+        {!compact && (
+          <span className="text-[14px] font-bold tracking-wide">
+            {ROAD_LABELS[workState.road_type] || "一般道"}
+          </span>
+        )}
+      </button>
+
+      {/* 3. 実車 / 空車 */}
+      <button
+        type="button"
+        disabled={loadedDisabled}
+        onClick={onToggleLoaded}
+        title={workState.is_loaded ? "実車" : "空車"}
+        className={`${layoutClass} ${
+          loadedDisabled ? disabledStyle : activeStyle
+        }`}
+      >
+        {truckIcon}
+        {!compact && (
+          <span className="text-[14px] font-bold tracking-wide">
+            {workState.is_loaded ? "実車" : "空車"}
+          </span>
+        )}
+      </button>
+
+      {/* 4. Wide: 連絡 (Disabled while moving) / Compact Nav: 検索 */}
+      {compact ? (
         <button
-          onClick={onCaptureDashcam}
-          disabled={isCapturingDashcam}
-          className={`${btnBase} ${
-            isCapturingDashcam
-              ? "bg-amber-600 text-white"
-              : "bg-[#3d3d44] hover:bg-[#4c4c55] active:bg-[#2c2c32] text-white"
+          type="button"
+          onClick={() =>
+            onOpenSearchFromNav ? onOpenSearchFromNav() : onNavigate("dispatch")
+          }
+          title="検索・運行指示書"
+          className={`${layoutClass} ${activeStyle}`}
+        >
+          <DtsSearchIcon className="w-5 h-5 shrink-0" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          disabled={contactDisabled}
+          onClick={() =>
+            onNavigate(currentView === "contact" ? "work_menu" : "contact")
+          }
+          title="連絡"
+          className={`${layoutClass} ${
+            contactDisabled ? disabledStyle : activeStyle
           }`}
         >
-          <Camera className="w-5 h-5 mb-1" />
-          <span className="text-[11px] font-bold">
-            {isCapturingDashcam ? "保存中..." : "撮影"}
-          </span>
+          <DtsContactIcon className="w-5 h-5 shrink-0" />
+          <span className="text-[14px] font-bold tracking-wide">連絡</span>
+          {unreadMessageCount > 0 && !contactDisabled && (
+            <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-amber-400" />
+          )}
         </button>
       )}
 
-      {/* 3. 道路区分切替 (市街地 / 一般道 / 高速道 / 専用道) */}
-      <button
-        onClick={onCycleRoadType}
-        className={`${btnBase} ${
-          workState.road_type === "highway"
-            ? "bg-sky-700/80 hover:bg-sky-600 text-white"
-            : "bg-[#3d3d44] hover:bg-[#4c4c55] text-white"
-        }`}
-      >
-        <Route className="w-5 h-5 mb-1" />
-        <span className="text-[11px] font-bold">
-          {ROAD_LABELS[workState.road_type] || "一般道"}
-        </span>
-      </button>
-
-      {/* 4. 実車 / 空車 */}
-      <button
-        onClick={onToggleLoaded}
-        className={`${btnBase} ${
-          workState.is_loaded
-            ? "bg-emerald-700/80 hover:bg-emerald-600 text-white"
-            : "bg-[#3d3d44] hover:bg-[#4c4c55] text-zinc-200"
-        }`}
-      >
-        <Truck className="w-5 h-5 mb-1" />
-        <span className="text-[11px] font-bold">
-          {workState.is_loaded ? "実車" : "空車"}
-        </span>
-      </button>
-
-      {/* 5. 連絡 / 指示書 */}
-      <button
-        onClick={() =>
-          onNavigate(currentView === "contact" ? "dispatch" : "contact")
-        }
-        className={`${btnBase} relative ${
-          currentView === "contact" || currentView === "dispatch"
-            ? "bg-[#187f82] text-white"
-            : "bg-[#3d3d44] hover:bg-[#4c4c55] text-white"
-        }`}
-      >
-        <Mail className="w-5 h-5 mb-1" />
-        <span className="text-[11px] font-bold">連絡・指示</span>
-        {unreadMessageCount > 0 && (
-          <span className="absolute top-1.5 right-2 w-4 h-4 rounded-full bg-amber-400 text-black text-[10px] font-black flex items-center justify-center">
-            {unreadMessageCount}
-          </span>
-        )}
-      </button>
-
-      {/* 6. ナビ地図 ⇔ 走行計器 */}
-      <button
-        onClick={() => onNavigate(currentView === "nav" ? "driving" : "nav")}
-        className={`${btnBase} border-b-0 ${
-          currentView === "nav"
-            ? "bg-[#ff1155] text-white"
-            : "bg-[#3d3d44] hover:bg-[#4c4c55] text-white"
-        }`}
-      >
-        <MapIcon className="w-5 h-5 mb-1" />
-        <span className="text-[11px] font-bold">
-          {currentView === "nav" ? "計器へ" : "地図"}
-        </span>
-      </button>
+      {/* 5. Wide: 地図 / Compact Nav: 3x3メニュー復帰 */}
+      {compact ? (
+        <button
+          type="button"
+          onClick={() =>
+            onReturnFromNav ? onReturnFromNav() : onNavigate("work_menu")
+          }
+          title="デジタコメニュー"
+          className={`${layoutClass} border-b-0 ${activeStyle}`}
+        >
+          <DtsGrid3x3Icon className="w-5 h-5 shrink-0" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onNavigate("nav")}
+          title="地図"
+          className={`${layoutClass} border-b-0 ${activeStyle}`}
+        >
+          <DtsMapIcon className="w-5 h-5 shrink-0" />
+          <span className="text-[14px] font-bold tracking-wide">地図</span>
+        </button>
+      )}
     </aside>
   );
 };
