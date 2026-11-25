@@ -132,9 +132,12 @@ pub fn start_companion_loop(
         return Ok(());
     }
 
-    let server = Server::http("0.0.0.0:3002").map_err(|e| {
+    let server = Server::http("0.0.0.0:3002").map_err(|e| { running.store(false, Ordering::SeqCst);
         running.store(false, Ordering::SeqCst);
         format!("Failed to bind companion port 3002: {}", e)
+    }).map_err(|e| {
+        running.store(false, Ordering::SeqCst);
+        e
     })?;
 
     std::thread::spawn(move || {
