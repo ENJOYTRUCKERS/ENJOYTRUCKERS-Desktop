@@ -275,7 +275,11 @@ let n = self.window_buf.len() as f64;
         let abs_gy = avg_gy.abs();
         let forward_g = if avg_gz > 0.0 { avg_gz } else { 0.0 };
         let brake_g = if avg_gz < 0.0 { -avg_gz } else { 0.0 };
-        if avg_gx.abs() > 100.0 || avg_gy.abs() > 100.0 || avg_gz.abs() > 100.0 { return emitted; }
+        if avg_gx.abs() > 100.0 || avg_gy.abs() > 100.0 || avg_gz.abs() > 100.0 { // Clip values to prevent incorrect calculations
+    self.smoothed_g_lat = avg_gx.clamp(-100.0, 100.0);
+    self.smoothed_g_vert = avg_gy.clamp(-100.0, 100.0);
+    self.smoothed_g_long = avg_gz.clamp(-100.0, 100.0);
+}
 let composite_g = (avg_gx * avg_gx + avg_gy * avg_gy + avg_gz * avg_gz).sqrt();
 
         if forward_g > self.max_forward_g {
