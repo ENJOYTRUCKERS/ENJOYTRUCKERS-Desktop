@@ -209,7 +209,7 @@ pub fn start_companion_loop(
                     }
                 }
                 Ok(None) => {}
-                Err(e) => { eprintln!("Error receiving request: {}", e); running.store(false, Ordering::SeqCst); let resp = Response::from_string(format!("Error: {}", e)).with_status_code(500).with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..]).unwrap()); let _ = req.respond(resp); }
+                Err(e) => { eprintln!("Error receiving request: {}", e); let resp = Response::from_string(format!("Error: {}", e)).with_status_code(500).with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..]).unwrap()); let _ = req.respond(resp); }
             }
         }
         running.store(false, Ordering::SeqCst);
