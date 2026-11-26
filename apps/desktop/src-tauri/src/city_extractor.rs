@@ -54,12 +54,7 @@ fn read_build_id(app_id: &str) -> Option<String> {
                 if t.starts_with("\"buildid\"") {
                     let parts: Vec<&str> = t.split('"').filter(|s| !s.trim().is_empty()).collect();
                     if parts.len() >= 2 && parts[0] == "buildid" {
-                        return Ok(parts[1].trim().to_string());
-        }
-    }
-}
-
-Some(parts[1].trim().to_string())
+                        return Some(parts[1].trim().to_string());
                     }
                 }
             }
