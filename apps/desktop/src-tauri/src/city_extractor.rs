@@ -59,7 +59,7 @@ fn read_build_id(app_id: &str) -> Option<String> {
     }
 }
 
-Some(build_id)
+Some(parts[1].trim().to_string())
                     }
                 }
             }
