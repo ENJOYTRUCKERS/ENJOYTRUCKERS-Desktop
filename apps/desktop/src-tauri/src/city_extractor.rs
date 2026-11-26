@@ -106,7 +106,6 @@ fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) {
 pub fn cityhash64(s: &[u8]) -> u64 {
     const MAX_LEN: usize = 1024 * 1024; // 1MB
     if s.len() > MAX_LEN { log::error!("Input data is too long"); return 0; }
-        eprintln!("Input data is too long");
         return 0;
     }
     const K0: u64 = 0xc3a5c85c97cb3127;
