@@ -58,7 +58,7 @@ fn read_build_id(app_id: &str) -> Option<String> {
         }
     }
 }
-log::error!("Failed to find build ID in {:?}", p);
+
 None
                     }
                 }
