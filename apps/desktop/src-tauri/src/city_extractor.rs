@@ -91,7 +91,7 @@ fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) {
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."));
-    if let Err(e) = fs::create_dir_all(&dir) {
+    if !dir.exists() && fs::create_dir_all(&dir).is_err() {
     log::error!("Failed to create directory {:?}: {}", dir, e);
 }
     let path = dir.join("city_sync_state.json");
