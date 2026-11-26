@@ -452,6 +452,15 @@ pub fn encrypt_data(plaintext: &str) -> Result<String, String> {
     let mut payload = nonce.to_vec();
     payload.extend_from_slice(&ciphertext);
     Ok(b64.encode(&payload))
+    let key = get_crypto_key();
+    let cipher = Aes256Gcm::new(&key);
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let ciphertext = cipher
+        .encrypt(&nonce, plaintext.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let mut payload = nonce.to_vec();
+    payload.extend_from_slice(&ciphertext);
+    Ok(b64.encode(&payload))
 }
 
 pub fn decrypt_data(encoded: &str) -> Result<String, String> {
