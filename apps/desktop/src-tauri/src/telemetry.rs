@@ -443,24 +443,11 @@ fn get_crypto_key() -> Key<Aes256Gcm> {
 }
 
 pub fn encrypt_data(plaintext: &str) -> Result<String, String> {
-    let key = get_crypto_key();
+    let key = get_crypto_key().map_err(|e| format!("Failed to get crypto key: {}", e))?;
     let cipher = Aes256Gcm::new(&key);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher
-        .encrypt(&nonce, plaintext.as_bytes())
-        .map_err(|e| e.to_string())?;
-    let mut payload = nonce.to_vec();
-    payload.extend_from_slice(&ciphertext);
-    Ok(b64.encode(&payload))
-    let key = get_crypto_key();
-    let cipher = Aes256Gcm::new(&key);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher
-        .encrypt(&nonce, plaintext.as_bytes())
-        .map_err(|e| e.to_string())?;
-    let mut payload = nonce.to_vec();
-    payload.extend_from_slice(&ciphertext);
-    Ok(b64.encode(&payload))
+    let nonce = Nonce::from_slice(&[0u8; 12]); // 12 bytes nonce
+    let ciphertext = cipher.encrypt(nonce, plaintext.as_bytes()).map_err(|e| format!("Encryption failed: {}", e))?;
+    Ok(b64.encode(ciphertext))
 }
 
 pub fn decrypt_data(encoded: &str) -> Result<String, String> {
