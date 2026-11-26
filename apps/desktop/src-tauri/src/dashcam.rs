@@ -71,7 +71,7 @@ pub fn capture_dashcam_screenshot(
     let capture_result = (|| {
         capture_primary_screen_png(&tmp_path)?;
         let png_bytes = fs::read(&tmp_path).map_err(|e| e.to_string())?;
-        fs::remove_file(&tmp_path).map_err(|e| e.to_string())?;
+        fs::remove_file(&tmp_path).map_err(|e| format!("Failed to remove temp file {}: {}", tmp_path.display(), e))?;
         Ok(png_bytes)
     })();
     let png_bytes = capture_result?;
