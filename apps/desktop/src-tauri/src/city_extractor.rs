@@ -319,7 +319,7 @@ if entry_count == 0 || entry_count > 500_000 {
         return Err(e.to_string());
     }
 
-        struct V1Entry {
+    struct V1Entry {
         offset: u64,
         flags: u32,
         size: u32,
