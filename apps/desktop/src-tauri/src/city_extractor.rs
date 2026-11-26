@@ -297,16 +297,16 @@ fn extract_text_entries_hashfs_v1(file: &mut File) -> Result<Vec<(String, String
     if &header[0..4] != b"SCS#" {
         return Err("Invalid archive header".to_string());
     }
-    let version = read_u16_le(&header, 4).unwrap_or_else(|| { log::error!("Failed to read version"); 0 });
+    let version = read_u16_le(&header, 4).ok_or_else(|| "Failed to read version".to_string())?;
     if version != 1 {
         return Err("Unsupported version".to_string());
     }
-    let entry_count = read_u32_le(&header, 12).unwrap_or_else(|| { log::error!("Failed to read entry count"); 0 }) as usize;
+    let entry_count = read_u32_le(&header, 12).ok_or_else(|| "Failed to read entry count".to_string())? as usize;
 if entry_count == 0 || entry_count > 500_000 {
     log::error!("Invalid entry count: {}", entry_count);
     return Err("Invalid entry count".to_string());
 }
-    let start_offset = read_u32_le(&header, 16).unwrap_or_else(|| { log::error!("Failed to read start offset"); 0 }) as u64;
+    let start_offset = read_u32_le(&header, 16).ok_or_else(|| "Failed to read start offset".to_string())? as u64;
 
     let table_len = entry_count.saturating_mul(32);
     let mut table = vec![0u8; table_len];
