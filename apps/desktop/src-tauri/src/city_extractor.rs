@@ -307,10 +307,6 @@ if entry_count == 0 || entry_count > 500_000 {
     return Err("Invalid entry count".to_string());
 }
     let start_offset = read_u32_le(&header, 16).unwrap_or_else(|| { log::error!("Failed to read start offset"); 0 }) as u64;
-    if entry_count == 0 || entry_count > 500_000 {
-        log::error!("Invalid entry count: {}", entry_count);
-        return Err("Invalid entry count".to_string());
-    }
 
     let table_len = entry_count.saturating_mul(32);
     let mut table = vec![0u8; table_len];
