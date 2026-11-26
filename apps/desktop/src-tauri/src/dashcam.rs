@@ -68,9 +68,13 @@ pub fn capture_dashcam_screenshot(
     let _ = fs::create_dir_all(&tmp_dir);
     let tmp_path = tmp_dir.join(format!("dashcam_{}.png", now_unix_ms()));
 
-    capture_primary_screen_png(&tmp_path)?;
-    let png_bytes = fs::read(&tmp_path).map_err(|e| e.to_string())?;
-    if let Err(e) = fs::remove_file(&tmp_path) { log::error!("Failed to remove temporary file: {}", e); };
+    let capture_result = (|| {
+        capture_primary_screen_png(&tmp_path)?;
+        let png_bytes = fs::read(&tmp_path).map_err(|e| e.to_string())?;
+        fs::remove_file(&tmp_path).map_err(|e| e.to_string())?;
+        Ok(png_bytes)
+    })();
+    let png_bytes = capture_result?;
 
     let encoded = b64.encode(&png_bytes);
     let client = reqwest::blocking::Client::builder()
