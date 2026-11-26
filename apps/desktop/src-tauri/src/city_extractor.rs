@@ -302,6 +302,10 @@ fn extract_text_entries_hashfs_v1(file: &mut File) -> Result<Vec<(String, String
         return Err("Unsupported version".to_string());
     }
     let entry_count = read_u32_le(&header, 12).unwrap_or_else(|| { log::error!("Failed to read entry count"); 0 }) as usize;
+if entry_count == 0 || entry_count > 500_000 {
+    log::error!("Invalid entry count: {}", entry_count);
+    return Err("Invalid entry count".to_string());
+}
     let start_offset = read_u32_le(&header, 16).unwrap_or_else(|| { log::error!("Failed to read start offset"); 0 }) as u64;
     if entry_count == 0 || entry_count > 500_000 {
         log::error!("Invalid entry count: {}", entry_count);
