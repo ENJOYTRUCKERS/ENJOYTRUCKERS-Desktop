@@ -37,7 +37,8 @@ fn capture_primary_screen_png(out_path: &PathBuf) -> Result<(), String> {
         .map_err(|e| format!("Failed to invoke PowerShell dashcam capture: {}", e))?;
 
     if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
+        log::error!("PowerShell dashcam capture error: {}", err);
         return Err(format!("Dashcam screenshot capture failed: {}", err));
     }
     Ok(())
