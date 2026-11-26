@@ -246,7 +246,7 @@ impl SafetyAnalyzer {
         let mut iterations = 0;
 while self.window_buf.len() > 1 && iterations < 100 && self.window_buf.len() > 1 {
             if let Some(front) = self.window_buf.front() {
-                if t_sec - front.t_sec > 0.4 {
+                if t_sec - front.t_sec > 0.4 && iterations < 100 {
                     self.window_buf.pop_front();
                     continue;
                 }
