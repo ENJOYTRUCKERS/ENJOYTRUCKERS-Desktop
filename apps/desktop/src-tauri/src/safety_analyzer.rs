@@ -402,7 +402,7 @@ let composite_g = (avg_gx * avg_gx + avg_gy * avg_gy + avg_gz * avg_gz).sqrt();
 
         if let Some(prev_t) = self.prev_active_t_sec {
             if t_sec > prev_t {
-                let jdt = t_sec - prev_t;
+                
                 let jmag = (((avg_gx - self.prev_avg_gx) / jdt).powi(2)
                     + ((avg_gz - self.prev_avg_gz) / jdt).powi(2))
                 .sqrt();
