@@ -87,8 +87,8 @@ pub fn capture_dashcam_screenshot(
         "token": token,
         "imageBase64": encoded,
         "mimeType": "image/png",
-        "reason": reason,
-        "eventId": event_id,
+        "reason": reason.as_deref().unwrap_or_default(),
+        "eventId": event_id.as_deref().unwrap_or_default(),
     });
 
     let res = client
