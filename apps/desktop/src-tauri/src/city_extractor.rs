@@ -284,7 +284,7 @@ fn read_u64_le(b: &[u8], off: usize) -> Option<u64> {
 }
 
 /// Parses an official HashFS v1 `.scs` archive into SII UTF-8 text snippets from relevant def/locale entries.
-fn extract_text_entries_hashfs_v1(file: &mut File) -> Vec<(String, String)> {
+fn extract_text_entries_hashfs_v1(file: &mut File) -> Result<Vec<(String, String)>, String> {
     let mut header = [0u8; 20];
     if let Err(e) = file.seek(SeekFrom::Start(0)) {
         log::error!("Failed to seek archive header: {}", e);
