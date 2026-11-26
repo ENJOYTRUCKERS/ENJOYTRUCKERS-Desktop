@@ -366,7 +366,7 @@ impl SessionRecorder {
             if tel.speed_limit > 0.0 {
                 serde_json::json!(tel.speed_limit.round())
             } else {
-                serde_json::Value::Null
+                serde_json::json!(0)
             },
             serde_json::json!(tel.engine_rpm.round()),
             serde_json::json!(tel.gear),
