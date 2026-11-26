@@ -82,7 +82,7 @@ fn load_sync_state(app: &tauri::AppHandle) -> CitySyncState {
     if let Ok(txt) = fs::read_to_string(path) {
         serde_json::from_str(&txt).map_err(|e| log::error!("Failed to deserialize city sync state: {}", e)).unwrap()
     } else {
-        CitySyncState { ets2_build_id: read_default_build_id("ets2"), ats_build_id: read_default_build_id("ats") }.unwrap_or_default()
+        CitySyncState { ets2_build_id: read_default_build_id("ets2"), ats_build_id: read_default_build_id("ats") }
     }
 }
 
