@@ -303,12 +303,12 @@ fn extract_text_entries_hashfs_v1(file: &mut File) -> Result<Vec<(String, String
     }
     let entry_count = read_u32_le(&header, 12).unwrap_or_else(|| { log::error!("Failed to read entry count"); 0 }) as usize;
     let start_offset = read_u32_le(&header, 16).unwrap_or_else(|| { log::error!("Failed to read start offset"); 0 }) as u64;
-    if entry_count == 0 || entry_count > 500_000 || entry_count > table.len() / 32 { log::error!("Invalid entry count: {}", entry_count); return Err("Invalid entry count".to_string()); } else { return Vec::new(); }
-        return Vec::new();
+    if entry_count == 0 || entry_count > 500_000 {
+        log::error!("Invalid entry count: {}", entry_count);
+        return Err("Invalid entry count".to_string());
     }
 
     let table_len = entry_count.saturating_mul(32);
-    let mut table = vec![0u8; table_len];
     let mut table = vec![0u8; table_len];
     if let Err(e) = file.seek(SeekFrom::Start(start_offset)) {
         log::error!("Failed to seek archive table: {}", e);
