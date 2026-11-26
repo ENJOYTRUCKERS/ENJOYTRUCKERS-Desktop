@@ -99,12 +99,12 @@ pub fn capture_dashcam_screenshot(
     let screenshot_id = val
         .get("screenshotId")
         .and_then(|v| v.as_str())
-        .unwrap_or("")
+        .ok_or_else(|| "Missing 'screenshotId' in response".to_string())?
         .to_string();
     let rel_url = val
         .get("url")
         .and_then(|v| v.as_str())
-        .unwrap_or("")
+        .ok_or_else(|| "Missing 'url' in response".to_string())?
         .to_string();
 
     Ok(DashcamUploadResult {
