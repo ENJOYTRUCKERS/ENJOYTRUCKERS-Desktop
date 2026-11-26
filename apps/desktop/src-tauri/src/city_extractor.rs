@@ -316,7 +316,7 @@ if entry_count == 0 || entry_count > 500_000 {
     }
     if let Err(e) = file.read_exact(&mut table) {
         log::error!("Failed to read archive table: {}", e);
-        return Err(e.to_string());
+        return Err(format!("Failed to read archive table: {}", e));
     }
 
     struct V1Entry {
