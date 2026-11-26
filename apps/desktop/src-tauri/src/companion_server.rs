@@ -37,7 +37,7 @@ impl CompanionServerManager {
 }
 
 pub fn detect_lan_ip() -> Option<String> {
-    let socket = match UdpSocket::bind("0.0.0.0:0") { Ok(s) => s, Err(e) => { eprintln!("Failed to bind UdpSocket: {}", e); return None; } }; if let Err(e) = socket.connect("8.8.8.8:80") { eprintln!("Failed to connect UdpSocket: {}", e); return None; }
+    let socket = match UdpSocket::bind("0.0.0.0:0") { Ok(s) => s, Err(e) => { eprintln!("Failed to bind UdpSocket: {}", e); let _ = s; return None; } }; if let Err(e) = socket.connect("8.8.8.8:80") { eprintln!("Failed to connect UdpSocket: {}", e); let _ = socket; return None; }
     let addr = socket.local_addr().ok()?;
     let ip = addr.ip().to_string();
     if ip == "0.0.0.0" || ip == "127.0.0.1" {
