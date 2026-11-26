@@ -319,7 +319,7 @@ fn extract_text_entries_hashfs_v1(file: &mut File) -> Result<Vec<(String, String
         return Err(e.to_string());
     }
 
-    struct V1Entry {
+        struct V1Entry {
         offset: u64,
         flags: u32,
         size: u32,
