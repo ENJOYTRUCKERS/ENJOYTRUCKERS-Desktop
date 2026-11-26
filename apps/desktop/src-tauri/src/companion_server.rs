@@ -108,11 +108,21 @@ async function refresh() {
   } catch {}
 }
 async function setWork(wt) {
-  await fetch('/api/work', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ workType: wt }) });
+  try {
+    const r = await fetch('/api/work', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ workType: wt }) });
+    if (!r.ok) console.error('Failed to set work status');
+  } catch (e) {
+    console.error('Network error during setWork:', e);
+  }
   refresh();
 }
 async function toggleSos() {
-  await fetch('/api/sos', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({}) });
+  try {
+    const r = await fetch('/api/sos', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({}) });
+    if (!r.ok) console.error('Failed to toggle SOS');
+  } catch (e) {
+    console.error('Network error during toggleSos:', e);
+  }
   refresh();
 }
 refresh();
