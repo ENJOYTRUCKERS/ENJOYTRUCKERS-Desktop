@@ -93,7 +93,6 @@ pub fn capture_dashcam_screenshot(
         .map_err(|e| e.to_string())?;
 
     if !res.status().is_success() { return Err(format!("Dashcam upload failed with status: {}", res.status())); }
-        return Err(format!("Dashcam upload HTTP {}", res.status()));
     }
 
     let val: serde_json::Value = res.json().map_err(|e| format!("Failed to parse JSON response: {} - Response body: {}", e.to_string()))?;
