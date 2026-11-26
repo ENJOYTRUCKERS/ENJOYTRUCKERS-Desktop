@@ -287,11 +287,11 @@ fn extract_text_entries_hashfs_v1(file: &mut File) -> Result<Vec<(String, String
     let mut header = [0u8; 20];
     if let Err(e) = file.seek(SeekFrom::Start(0)) {
         log::error!("Failed to seek archive header: {}", e);
-        return Err("Failed to seek archive header".to_string());
+        return Err(format!("Failed to seek archive header: {}", e));
     }
     if let Err(e) = file.read_exact(&mut header) {
         log::error!("Failed to read archive header: {}", e);
-        return Err("Failed to read archive header".to_string());
+        return Err(format!("Failed to read archive header: {}", e));
     }
     if &header[0..4] != b"SCS#" {
         return Err("Invalid archive header".to_string());
@@ -311,7 +311,7 @@ if entry_count == 0 || entry_count > 500_000 {
     let mut table = vec![0u8; table_len];
     if let Err(e) = file.seek(SeekFrom::Start(start_offset)) {
         log::error!("Failed to seek archive table: {}", e);
-        return Err("Failed to seek archive table".to_string());
+        return Err(format!("Failed to seek archive table: {}", e));
     }
     if let Err(e) = file.read_exact(&mut table) {
         log::error!("Failed to read archive table: {}", e);
