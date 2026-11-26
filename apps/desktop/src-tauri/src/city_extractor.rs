@@ -46,7 +46,7 @@ fn read_build_id(app_id: &str) -> Option<String> {
     let manifest_name = format!("appmanifest_{}.acf", app_id);
     for steamapps in collect_steamapps_dirs() {
         let p = steamapps.join(&manifest_name);
-        if let Ok(content) = fs::read_to_string(&p).map_err(|e| log::error!("Failed to read file {:?}: {}", p, e)) {
+        if let Ok(content) = fs::read_to_string(&p).map_err(|_| log::error!("Failed to read file {:?}", p)) {
             log::info!("Successfully read content from {:?}", p);
 
             for line in content.lines() {
