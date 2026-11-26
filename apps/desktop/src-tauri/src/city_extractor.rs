@@ -329,7 +329,7 @@ if entry_count == 0 || entry_count > 500_000 {
         hash: u64,
     }
     let mut by_hash = HashMap::with_capacity(entry_count);
-    for i in 0..entry_count {
+    for i in 0..entry_count.min(500_000) {
         let base = i * 32;
         let hash = read_u64_le(&table, base).unwrap_or(0);
         let offset = read_u64_le(&table, base + 8).unwrap_or(0);
