@@ -316,7 +316,7 @@ fn extract_text_entries_hashfs_v1(file: &mut File) -> Vec<(String, String)> {
     }
     if let Err(e) = file.read_exact(&mut table) {
         log::error!("Failed to read archive table: {}", e);
-        return Err("Failed to read archive table".to_string());
+        return Err(e.to_string());
     }
 
     struct V1Entry {
