@@ -249,7 +249,7 @@ pub fn cityhash64(s: &[u8]) -> u64 {
 }
 
 fn read_u16_le(b: &[u8], off: usize) -> Option<u16> {
-    if off + 2 > b.len() {
+    if off + 2 > b.len() { eprintln!("Error: Failed to read u16 at offset {}: out of bounds (buffer length {})", off, b.len()); return None; }
         eprintln!("Error: Failed to read u16 at offset {}: out of bounds (buffer length {})", off, b.len());
         return None;
     }
@@ -259,7 +259,7 @@ fn read_u16_le(b: &[u8], off: usize) -> Option<u16> {
     })
 }
 fn read_u32_le(b: &[u8], off: usize) -> Option<u32> {
-    if off + 4 > b.len() {
+    if off + 4 > b.len() { eprintln!("Error: Failed to read u32 at offset {}: out of bounds (buffer length {})", off, b.len()); return None; }
         eprintln!("Error: Failed to read u32 at offset {}: out of bounds (buffer length {})", off, b.len());
         return None;
     }
@@ -271,7 +271,7 @@ fn read_u32_le(b: &[u8], off: usize) -> Option<u32> {
         })
 }
 fn read_u64_le(b: &[u8], off: usize) -> Option<u64> {
-    if off + 8 > b.len() {
+    if off + 8 > b.len() { eprintln!("Error: Failed to read u64 at offset {}: out of bounds (buffer length {})", off, b.len()); return None; }
         eprintln!("Error: Failed to read u64 at offset {}: out of bounds (buffer length {})", off, b.len());
         return None;
     }
