@@ -92,7 +92,7 @@ pub fn capture_dashcam_screenshot(
         .send()
         .map_err(|e| e.to_string())?;
 
-    if !res.status().is_success() {
+    if !res.status().is_success() { return Err(format!("Dashcam upload failed with status: {}", res.status())); }
         return Err(format!("Dashcam upload HTTP {}", res.status()));
     }
 
