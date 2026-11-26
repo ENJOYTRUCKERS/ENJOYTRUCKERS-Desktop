@@ -228,7 +228,6 @@ impl SafetyAnalyzer {
             self.smoothed_g_lat = g_lat;
             self.smoothed_g_vert = g_vert;
             self.smoothed_g_long = g_long;
-            self.prev_active_t_sec = Some(t_sec);
             return emitted;
         }
 
