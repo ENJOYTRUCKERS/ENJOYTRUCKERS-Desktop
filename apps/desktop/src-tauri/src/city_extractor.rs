@@ -336,7 +336,7 @@ if entry_count == 0 || entry_count > 500_000 {
         let flags = read_u32_le(&table, base + 16).unwrap_or(0);
         let size = read_u32_le(&table, base + 24).unwrap_or(0);
         let csize = read_u32_le(&table, base + 28).unwrap_or(0);
-        by_hash.insert(hash, V1Entry { offset, flags, size, csize });
+        by_hash.insert(hash, V1Entry { offset, flags, size, csize, name: String::new(), type_: String::new(), hash });
     }
 
     let read_entry = |f: &mut File, e: &V1Entry| -> Option<Vec<u8>> {
