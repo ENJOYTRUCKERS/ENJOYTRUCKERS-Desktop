@@ -69,7 +69,7 @@ pub fn capture_dashcam_screenshot(
     let capture_result = (|| {
         capture_primary_screen_png(&tmp_path)?;
         let png_bytes = fs::read(&tmp_path).map_err(|e| e.to_string())?;
-        if let Err(e) = fs::remove_file(&tmp_path) { log::error!("Failed to remove temp file {}: {}. Aborting capture process.", tmp_path.display(), e); }
+        if let Err(e) = fs::remove_file(&tmp_path) { log::error!("Failed to remove temp file {}: {}. Aborting capture process.", tmp_path.display(), e); return Err(format!("Failed to remove temp file {}: {}", tmp_path.display(), e)); }
         Ok(png_bytes)
     })();
     let png_bytes = capture_result?;
