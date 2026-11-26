@@ -275,7 +275,7 @@ fn extract_text_entries_hashfs_v1(file: &mut File) -> Result<Vec<(String, String
         return Err(format!("Failed to seek archive header: {}", e));
     }
     if let Err(e) = file.read_exact(&mut header) {
-        log::error!("Failed to read archive header: {}", e); return Err(format!("Failed to read archive header: {}", e));
+        log::error!("Failed to read archive header: {}", e);
         return Err(format!("Failed to read archive header: {}", e));
     }
     if &header[0..4] != b"SCS#" {
