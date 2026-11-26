@@ -96,7 +96,7 @@ pub fn capture_dashcam_screenshot(
         return Err(format!("Dashcam upload HTTP {}", res.status()));
     }
 
-    let val: serde_json::Value = res.json().map_err(|e| format!("Failed to parse JSON response: {}", e.to_string()))?;
+    let val: serde_json::Value = res.json().map_err(|e| format!("Failed to parse JSON response: {} - Response body: {}", e.to_string()))?;
     let screenshot_id = val
         .get("screenshotId")
         .and_then(|v| v.as_str())
