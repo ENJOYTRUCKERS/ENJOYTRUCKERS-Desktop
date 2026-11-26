@@ -414,17 +414,27 @@ impl Default for AppConfig {
 }
 
 pub fn get_config_path(app: &tauri::AppHandle) -> PathBuf {
-    let mut path = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let mut path = match app.path().app_data_dir() {
+            Ok(dir) => dir,
+            Err(e) => {
+                eprintln!("Failed to get app data directory: {}. Exiting application.", e);
+std::process::exit(1);
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+            }
+        };
     let _ = fs::create_dir_all(&path);
     path.push("config.enc");
     path
 }
 
 fn get_crypto_key() -> Key<Aes256Gcm> {
-    let hw_id = machine_uid::get().unwrap_or_else(|_| "UNKNOWN_MACHINE".to_string());
+    let hw_id = match machine_uid::get() {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("Failed to get machine UID: {}", e);
+                return Err("Failed to get machine UID".to_string());
+            }
+        };
     let mut hasher = Sha256::new();
     hasher.update(b"ENJOYTRUCKERS_SECURE_SALT_991823");
     hasher.update(hw_id.as_bytes());
@@ -441,16 +451,18 @@ pub fn encrypt_data(plaintext: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     let mut payload = nonce.to_vec();
     payload.extend_from_slice(&ciphertext);
-    Ok(b64.encode(payload))
+    Ok(b64.encode(&payload))
 }
 
 pub fn decrypt_data(encoded: &str) -> Result<String, String> {
     let payload = b64.decode(encoded).map_err(|e| e.to_string())?;
+if payload.len() < 12 {;
     if payload.len() < 12 {
         return Err("Payload too short".into());
     }
     let (nonce_bytes, ciphertext) = payload.split_at(12);
     let nonce = Nonce::from_slice(nonce_bytes);
+let ciphertext = &payload[12..];
     let key = get_crypto_key();
     let cipher = Aes256Gcm::new(&key);
     let plaintext = cipher

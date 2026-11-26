@@ -73,11 +73,11 @@ pub struct SafetyAnalyzer {
     last_impact_trigger: f64,
     last_jerk_trigger: f64,
 
-    pub harsh_accel_count: u32,
-    pub harsh_brake_count: u32,
-    pub harsh_corner_count: u32,
-    pub high_jerk_count: u32,
-    pub impact_count: u32,
+    pub harsh_accel_count: u64,
+    pub harsh_brake_count: u64,
+    pub harsh_corner_count: u64,
+    pub high_jerk_count: u64,
+    pub impact_count: u64,
 
     pub max_forward_g: f64,
     pub max_brake_g: f64,
@@ -102,11 +102,11 @@ pub struct SafetyAnalyzer {
 
     pub driving_samples: u64,
     pub compliant_speed_samples: u64,
-    pub speeding_seconds: u32,
+    pub speeding_seconds: u64,
     pub max_speed_over_kmh: f64,
-    pub rpm_over_seconds: u32,
-    pub idle_seconds: u32,
-    pub shoulder_offroad_seconds: u32,
+    pub rpm_over_seconds: u64,
+    pub idle_seconds: u64,
+    pub shoulder_offroad_seconds: u64,
 }
 
 impl Default for SafetyAnalyzer {
@@ -166,7 +166,7 @@ impl SafetyAnalyzer {
     }
 
     pub fn reset(&mut self) {
-        *self = Self::new();
+        *self = Self::default();
     }
 
     fn reset_sustain_windows(&mut self) {
@@ -217,6 +217,8 @@ impl SafetyAnalyzer {
         }
 
         if t_sec < self.excluded_until_sec || speed_kmh.abs() <= 3.0 {
+            self.prev_active_t_sec = Some(t_sec);
+
             self.window_buf.clear();
             self.accel_start = None;
             self.brake_start = None;
@@ -230,7 +232,7 @@ impl SafetyAnalyzer {
             return emitted;
         }
 
-        let dt_prev = match self.prev_active_t_sec {
+        let dt_prev = match self.prev_active_t_sec { Some(prev) if t_sec > prev => (t_sec - prev).max(0.05), _ => 0.05, };
             Some(prev) if t_sec > prev => (t_sec - prev).max(0.05),
             _ => 0.05,
         };
@@ -241,26 +243,29 @@ impl SafetyAnalyzer {
             g_vert: if g_vert.is_finite() { g_vert } else { 0.0 },
             g_long: if g_long.is_finite() { g_long } else { 0.0 },
         });
-        while self.window_buf.len() > 1 {
+        let mut iterations = 0;
+while self.window_buf.len() > 1 && iterations < 100 && self.window_buf.len() > 1 {
             if let Some(front) = self.window_buf.front() {
                 if t_sec - front.t_sec > 0.4 {
                     self.window_buf.pop_front();
                     continue;
                 }
             }
-            break;
+            iterations += 1;
+break;
         }
 
-        let n = self.window_buf.len() as f64;
+        if self.window_buf.is_empty() { return emitted; }
+let n = self.window_buf.len() as f64;
         let (mut sum_gx, mut sum_gy, mut sum_gz) = (0.0, 0.0, 0.0);
         for item in &self.window_buf {
             sum_gx += item.g_lat;
             sum_gy += item.g_vert;
             sum_gz += item.g_long;
         }
-        let avg_gx = sum_gx / n;
-        let avg_gy = sum_gy / n;
-        let avg_gz = sum_gz / n;
+        let avg_gx = if self.window_buf.is_empty() { 0.0 } else { sum_gx / n };
+        let avg_gy = if self.window_buf.is_empty() { 0.0 } else { sum_gy / n };
+        let avg_gz = if self.window_buf.is_empty() { 0.0 } else { sum_gz / n };
 
         self.smoothed_g_lat = avg_gx;
         self.smoothed_g_vert = avg_gy;
@@ -270,7 +275,8 @@ impl SafetyAnalyzer {
         let abs_gy = avg_gy.abs();
         let forward_g = if avg_gz > 0.0 { avg_gz } else { 0.0 };
         let brake_g = if avg_gz < 0.0 { -avg_gz } else { 0.0 };
-        let composite_g = (avg_gx * avg_gx + avg_gy * avg_gy + avg_gz * avg_gz).sqrt();
+        if avg_gx.abs() > 100.0 || avg_gy.abs() > 100.0 || avg_gz.abs() > 100.0 { return emitted; }
+let composite_g = (avg_gx * avg_gx + avg_gy * avg_gy + avg_gz * avg_gz).sqrt();
 
         if forward_g > self.max_forward_g {
             self.max_forward_g = forward_g;
