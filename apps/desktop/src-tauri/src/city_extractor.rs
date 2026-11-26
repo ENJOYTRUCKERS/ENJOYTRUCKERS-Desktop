@@ -91,12 +91,12 @@ fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) {
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."));
-    if !dir.exists() && fs::create_dir_all(&dir).is_err() {
+    if !dir.exists() && fs::create_dir_all(&dir).is_err() { log::error!("Failed to create directory {:?}: {}", dir, e); return Err("Failed to create directory".to_string()); }
     log::error!("Failed to create directory {:?}: {}", dir, e);
 }
     let path = dir.join("city_sync_state.json");
     if let Ok(json) = serde_json::to_string_pretty(state).map_err(|e| log::error!("Failed to serialize city sync state: {}", e)) {
-        if let Err(e) = fs::write(path, json) {
+        if let Err(e) = fs::write(path, json) { log::error!("Failed to write to {:?}: {}", path, e); return Err("Failed to write to file".to_string()); }
     log::error!("Failed to write to {:?}: {}", path, e);
 }
     }
