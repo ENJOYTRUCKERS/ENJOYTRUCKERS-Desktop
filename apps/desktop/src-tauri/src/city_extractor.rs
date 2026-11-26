@@ -328,6 +328,14 @@ if entry_count == 0 || entry_count > 500_000 {
         type_: String,
         hash: u64,
     }
+        offset: u64,
+        flags: u32,
+        size: u32,
+        csize: u32,
+        name: String,
+        type_: String,
+        hash: u64,
+    }
     let mut by_hash = HashMap::with_capacity(entry_count);
     for i in 0..entry_count.min(500_000) {
         let base = i * 32;
