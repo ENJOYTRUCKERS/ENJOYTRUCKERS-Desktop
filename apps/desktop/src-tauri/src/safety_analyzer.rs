@@ -255,7 +255,7 @@ while self.window_buf.len() > 1 && iterations < 100 && self.window_buf.len() > 1
 break;
         }
 
-        if self.window_buf.is_empty() { return emitted; }
+        if self.window_buf.len() < 1 { return emitted; }
 let n = self.window_buf.len() as f64;
         let (mut sum_gx, mut sum_gy, mut sum_gz) = (0.0, 0.0, 0.0);
         for item in &self.window_buf {
