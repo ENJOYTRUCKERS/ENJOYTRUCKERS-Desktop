@@ -103,7 +103,7 @@ pub fn capture_dashcam_screenshot(
         ));
     }
 
-    let val: serde_json::Value = res.json().map_err(|e| format!("Failed to parse JSON response: {}. Response body: {}", e.to_string()))?;
+    let val: serde_json::Value = match res.json() { Ok(v) => v, Err(e) => { log::error!("Failed to parse JSON response: {}. Response body: {}", e.to_string(), res.text().unwrap_or_else(|_| "".to_string())); return Err("Failed to parse JSON response".to_string()); } };
     let screenshot_id = val
         .get("screenshotId")
         .and_then(|v| v.as_str())
