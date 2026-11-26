@@ -248,21 +248,21 @@ pub fn cityhash64(s: &[u8]) -> u64 {
 fn read_u16_le(b: &[u8], off: usize) -> Option<u16> {
     if off + 2 > b.len() {
         log::error!("Error: Failed to read u16 at offset {}: out of bounds (buffer length {})", off, b.len());
-        return None;
+        return Err("Buffer out of bounds".to_string());
     }
     b.get(off..off + 2).map(|s| u16::from_le_bytes([s[0], s[1]]))
 }
 fn read_u32_le(b: &[u8], off: usize) -> Option<u32> {
     if off + 4 > b.len() {
         log::error!("Error: Failed to read u32 at offset {}: out of bounds (buffer length {})", off, b.len());
-        return None;
+        return Err("Buffer out of bounds".to_string());
     }
     b.get(off..off + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 fn read_u64_le(b: &[u8], off: usize) -> Option<u64> {
     if off + 8 > b.len() {
         log::error!("Error: Failed to read u64 at offset {}: out of bounds (buffer length {})", off, b.len());
-        return None;
+        return Err("Buffer out of bounds".to_string());
     }
     b.get(off..off + 8).map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
 }
