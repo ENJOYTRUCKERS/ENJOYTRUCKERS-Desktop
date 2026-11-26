@@ -248,10 +248,8 @@ pub fn cityhash64(s: &[u8]) -> u64 {
 
 fn read_u16_le(b: &[u8], off: usize) -> Option<u16> {
     if off + 2 > b.len() {
-        if off + 2 > b.len() {
-            log::error!("Error: Failed to read u16 at offset {}: out of bounds (buffer length {})", off, b.len());
-            return None;
-        }
+        log::error!("Error: Failed to read u16 at offset {}: out of bounds (buffer length {})", off, b.len());
+        return None;
     }
     b.get(off..off + 2).map(|s| u16::from_le_bytes([s[0], s[1]]))
 }
