@@ -418,7 +418,7 @@ pub fn get_config_path(app: &tauri::AppHandle) -> PathBuf {
             Ok(dir) => dir,
             Err(e) => {
                 eprintln!("Failed to get app data directory: {}. Exiting application.", e);
-std::process::exit(1);
+
                 std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
             }
         };
