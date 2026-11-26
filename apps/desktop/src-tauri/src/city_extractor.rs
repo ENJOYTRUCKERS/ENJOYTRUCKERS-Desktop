@@ -98,6 +98,7 @@ fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) {
         if let Err(e) = fs::write(path, json) { log::error!("Failed to write to {:?}: {}", path, e); return Err("Failed to write to file".to_string()); }
 }
     }
+    Ok(())
 }
 
 /// Computes CityHash64 matching SCS HashFS path hashing (little-endian).
