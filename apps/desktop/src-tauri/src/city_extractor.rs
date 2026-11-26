@@ -320,6 +320,14 @@ if entry_count == 0 || entry_count > 500_000 {
     }
 
     struct V1Entry {
+    offset: u64,
+    flags: u32,
+    size: u32,
+    csize: u32,
+    name: String,
+    type_: String,
+    hash: u64,
+}
         offset: u64,
         flags: u32,
         size: u32,
