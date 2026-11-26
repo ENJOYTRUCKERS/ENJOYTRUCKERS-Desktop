@@ -86,7 +86,7 @@ fn load_sync_state(app: &tauri::AppHandle) -> CitySyncState {
     }
 }
 
-fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) {
+fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) -> Result<(), String> {
     let dir = app
         .path()
         .app_data_dir()
