@@ -80,7 +80,7 @@ fn load_sync_state(app: &tauri::AppHandle) -> CitySyncState {
         .unwrap_or_else(|_| PathBuf::from("."));
     let path = dir.join("city_sync_state.json");
     if let Ok(txt) = fs::read_to_string(path) {
-        serde_json::from_str(&txt).unwrap_or_default()
+        serde_json::from_str(&txt).map_err(|e| log::error!("Failed to deserialize city sync state: {}", e)).unwrap_or_default()
     } else {
         CitySyncState { ets2_build_id: read_default_build_id("ets2"), ats_build_id: read_default_build_id("ats") }
     }
@@ -95,7 +95,7 @@ fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) {
     log::error!("Failed to create directory {:?}: {}", dir, e);
 }
     let path = dir.join("city_sync_state.json");
-    if let Ok(json) = serde_json::to_string_pretty(state) {
+    if let Ok(json) = serde_json::to_string_pretty(state).map_err(|e| log::error!("Failed to serialize city sync state: {}", e)) {
         if let Err(e) = fs::write(path, json) {
     log::error!("Failed to write to {:?}: {}", path, e);
 }
