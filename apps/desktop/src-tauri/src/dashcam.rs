@@ -72,7 +72,7 @@ pub fn capture_dashcam_screenshot(
 
     let encoded = b64.encode(&png_bytes);
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
 

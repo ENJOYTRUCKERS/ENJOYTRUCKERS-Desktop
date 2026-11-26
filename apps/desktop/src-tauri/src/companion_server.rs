@@ -37,8 +37,7 @@ impl CompanionServerManager {
 }
 
 pub fn detect_lan_ip() -> Option<String> {
-    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
+    let socket = match UdpSocket::bind("0.0.0.0:0") { Ok(s) => s, Err(e) => { eprintln!("Failed to bind UdpSocket: {}", e); return None; } }; if let Err(e) = socket.connect("8.8.8.8:80") { eprintln!("Failed to connect UdpSocket: {}", e); return None; }
     let addr = socket.local_addr().ok()?;
     let ip = addr.ip().to_string();
     if ip == "0.0.0.0" || ip == "127.0.0.1" {
@@ -128,16 +127,16 @@ pub fn start_companion_loop(
     telemetry: Arc<Mutex<TelemetryData>>,
     work_state: Arc<Mutex<WorkState>>,
 ) -> Result<(), String> {
-    if running.swap(true, Ordering::SeqCst) {
+    let mut running_lock = running.lock().unwrap();
+    if *running_lock {
         return Ok(());
     }
+    *running_lock = true;
+    drop(running_lock);
 
-    let server = Server::http("0.0.0.0:3002").map_err(|e| { running.store(false, Ordering::SeqCst);
+    let server = Server::http("0.0.0.0:3002").map_err(|e| {
         running.store(false, Ordering::SeqCst);
         format!("Failed to bind companion port 3002: {}", e)
-    }).map_err(|e| {
-        running.store(false, Ordering::SeqCst);
-        e
     })?;
 
     std::thread::spawn(move || {
@@ -176,7 +175,7 @@ pub fn start_companion_loop(
                         let _ = req.respond(resp);
                     } else if method == Method::Post && url.starts_with("/api/work") {
                         let mut body = String::new();
-                        let _ = req.as_reader().read_to_string(&mut body);
+                        let read_result = req.as_reader().read_to_string(&mut body); if let Err(e) = read_result { eprintln!("Failed to read request body: {:?}", e); let resp = Response::from_string("Failed to read request body").with_status_code(400).with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..]).unwrap()); let _ = req.respond(resp); continue; } else if let Err(e) = serde_json::from_str::<serde_json::Value>(&body) { eprintln!("Failed to parse JSON: {:?}", e); let resp = Response::from_string(format!("Failed to parse JSON: {}", e)).with_status_code(400).with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..]).unwrap()); let _ = req.respond(resp); continue; }
                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
                             if let Some(wt_str) = v.get("workType").and_then(|x| x.as_str()) {
                                 let wt = WorkType::from_str_lossy(wt_str);
@@ -196,11 +195,11 @@ pub fn start_companion_loop(
                         );
                         let _ = req.respond(resp);
                     } else {
-                        let _ = req.respond(Response::from_string("Not Found").with_status_code(404));
+                        let _ = req.respond(Response::from_string("Not Found").with_status_code(404).with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..]).unwrap()));
                     }
                 }
                 Ok(None) => {}
-                Err(_) => break,
+                Err(e) => { eprintln!("Error receiving request: {}", e); running.store(false, Ordering::SeqCst); return Err(format!("Error receiving request: {}", e)); }
             }
         }
         running.store(false, Ordering::SeqCst);
