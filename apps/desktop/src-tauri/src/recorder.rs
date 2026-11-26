@@ -523,10 +523,22 @@ impl SessionRecorder {
         Ok(final_path)
     }
 
-    fn append_wal_line(&self, app: &tauri::AppHandle, val: &serde_json::Value) {
+    fn append_wal_line(&self, app: &tauri::AppHandle, val: &serde_json::Value) -> Result<(), String> {
         let wal_dir = get_wal_dir(app);
         let wal_path = wal_dir.join("active_session.jsonl");
+        let wal_path = wal_dir.join("active_session.jsonl");
         if let Ok(line) = serde_json::to_string(val) {
+            if let Err(e) = writeln!(file, "{}", line) {
+                log::error!("Failed to write to WAL file: {}", e);
+                return Err(e.to_string());
+            }
+        } else {
+            log::error!("Failed to serialize WAL line: {}", val);
+            return Err("Failed to serialize WAL line".to_string());
+        }
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(wal_path).map_err(|e| { log::error!("Failed to open WAL file: {}", e); e })? {
+            let _ = writeln!(file, "{}", line).map_err(|e| { log::error!("Failed to write to WAL file: {}", e); })?
+        }
             if let Err(e) = writeln!(file, "{}", line) {
                 log::error!("Failed to write to WAL file: {}", e);
             }
