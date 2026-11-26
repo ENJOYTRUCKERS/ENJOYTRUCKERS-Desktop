@@ -232,7 +232,7 @@ impl SafetyAnalyzer {
             return emitted;
         }
 
-        let dt_prev = match self.prev_active_t_sec { Some(prev) if t_sec > prev => (t_sec - prev).max(0.05), _ => 0.05, };
+        let dt_prev = match self.prev_active_t_sec {
             Some(prev) if t_sec > prev => (t_sec - prev).max(0.05),
             _ => 0.05,
         };
