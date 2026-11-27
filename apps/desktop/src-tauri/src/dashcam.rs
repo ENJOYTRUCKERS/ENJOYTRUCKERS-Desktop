@@ -96,6 +96,13 @@ pub fn capture_dashcam_screenshot(
         .map_err(|e| e.to_string())?;
 
     if !res.status().is_success() {
+        log::error!("HTTP request failed with status: {} - {}", res.status(), res.status().as_str());
+        return Err(format!(
+            "Dashcam upload failed with status: {} - {}",
+            res.status(),
+            res.status().as_str()
+        ));
+    }
         return Err(format!(
             "Dashcam upload failed with status: {} - {}",
             res.status(),
