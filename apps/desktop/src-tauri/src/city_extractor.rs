@@ -94,6 +94,7 @@ fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) -> Result<(), 
 }
     }
     Ok(())
+  }
 }
 
 /// Computes CityHash64 matching SCS HashFS path hashing (little-endian).
