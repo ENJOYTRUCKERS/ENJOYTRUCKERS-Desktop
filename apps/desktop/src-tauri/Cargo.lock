@@ -914,10 +914,12 @@ dependencies = [
 
 [[package]]
 name = "desktop"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
+ "aes",
  "aes-gcm",
  "base64 0.22.1",
+ "cbc",
  "flate2",
  "keyring",
  "machine-uid",

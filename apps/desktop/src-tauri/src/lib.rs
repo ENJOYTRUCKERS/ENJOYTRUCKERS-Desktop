@@ -1,3 +1,4 @@
+pub mod academy_exam;
 pub mod city_extractor;
 pub mod companion_server;
 pub mod dashcam;
@@ -14,6 +15,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use academy_exam::AcademyExamRecorder;
 use plugin_manager::{fix_plugin_config, update_plugin_token};
 use recorder::{SessionRecorder, TachographEventEntry};
 use safety_analyzer::{DetectedGEvent, SafetyAnalyzer};
@@ -27,6 +29,7 @@ pub struct AppState {
     pub work_state: Arc<Mutex<WorkState>>,
     pub safety: Arc<Mutex<SafetyAnalyzer>>,
     pub recorder: Arc<Mutex<SessionRecorder>>,
+    pub academy_recorder: Arc<Mutex<AcademyExamRecorder>>,
     pub last_tick: Mutex<Instant>,
     pub prev_paused: Mutex<bool>,
     pub prev_sim_time: Mutex<f64>,
@@ -483,11 +486,13 @@ pub fn run() {
     let work_state_data = Arc::new(Mutex::new(WorkState::default()));
     let safety_analyzer = Arc::new(Mutex::new(SafetyAnalyzer::new()));
     let session_recorder = Arc::new(Mutex::new(SessionRecorder::new()));
+    let academy_exam_recorder = Arc::new(Mutex::new(AcademyExamRecorder::new()));
 
     let server_telemetry = Arc::clone(&telemetry_data);
     let server_work_state = Arc::clone(&work_state_data);
     let server_safety = Arc::clone(&safety_analyzer);
     let server_recorder = Arc::clone(&session_recorder);
+    let server_academy_recorder = Arc::clone(&academy_exam_recorder);
 
     let ticker_telemetry = Arc::clone(&telemetry_data);
     let ticker_work_state = Arc::clone(&work_state_data);
@@ -522,6 +527,7 @@ pub fn run() {
             work_state: work_state_data,
             safety: safety_analyzer,
             recorder: session_recorder,
+            academy_recorder: academy_exam_recorder,
             last_tick: Mutex::new(Instant::now()),
             prev_paused: Mutex::new(false),
             prev_sim_time: Mutex::new(0.0),
@@ -909,6 +915,12 @@ pub fn run() {
                                 *lock = parsed.clone();
                             }
 
+                            if let Ok(mut ac_rec) = server_academy_recorder.lock() {
+                                if ac_rec.active {
+                                    ac_rec.on_telemetry_sample(&parsed);
+                                }
+                            }
+
                             let mut detected_g_events: Vec<DetectedGEvent> = Vec::new();
                             let mut recorder_g_entries: Vec<TachographEventEntry> = Vec::new();
                             let mut ws_updated: Option<WorkState> = None;
@@ -1068,6 +1080,15 @@ pub fn run() {
             companion_server::get_companion_info,
             companion_server::set_lan_companion_enabled,
             dashcam::capture_dashcam_screenshot,
+            academy_exam::inspect_academy_environment,
+            academy_exam::start_academy_exam_telemetry,
+            academy_exam::stop_academy_exam_telemetry,
+            academy_exam::get_academy_exam_live_stats,
+            academy_exam::academy_video_begin,
+            academy_exam::academy_video_append_chunk,
+            academy_exam::academy_video_finalize,
+            academy_exam::academy_upload_submission,
+            academy_exam::academy_cleanup_local_video,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

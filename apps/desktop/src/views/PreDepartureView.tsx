@@ -107,7 +107,13 @@ export const PreDepartureView: React.FC<PreDepartureViewProps> = ({
           ツーマン
         </button>
 
-        <div className="bg-[#1b1c2a] h-[56px]" aria-hidden="true" />
+        <button
+          type="button"
+          onClick={() => onNavigate("academy_exam")}
+          className="bg-[#5a2942] hover:bg-[#703352] active:bg-[#471f34] text-white h-[56px] text-[14px] font-bold flex items-center justify-center relative select-none"
+        >
+          技能試験
+        </button>
 
         <button type="button" onClick={onBackToLogin} className={btnStyle}>
           戻る

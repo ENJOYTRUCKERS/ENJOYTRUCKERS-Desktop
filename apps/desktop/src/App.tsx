@@ -36,6 +36,7 @@ import {
   type WorkType,
 } from "./types/tachograph";
 import { ActiveWorkView } from "./views/ActiveWorkView";
+import { AcademyExamView } from "./views/AcademyExamView";
 import { ContactView } from "./views/ContactView";
 import { DiagnosticsView } from "./views/DiagnosticsView";
 import { DispatchView } from "./views/DispatchView";
@@ -2116,6 +2117,17 @@ function App() {
             }
           }}
           onToggleFeatureFlag={handleToggleFeatureFlag}
+          onBack={navigateBack}
+        />
+      )}
+
+      {currentView === "academy_exam" && (
+        <AcademyExamView
+          portalUrl={portalUrl}
+          telemetryToken={telemetryToken}
+          telemetry={telemetry}
+          isGameConnected={isGameConnected}
+          onOverlayChange={(next) => setOverlayState(next)}
           onBack={navigateBack}
         />
       )}

@@ -361,4 +361,85 @@ export type DtsViewId =
   | "contact"
   | "return_garage"
   | "diagnostics"
-  | "settings";
+  | "settings"
+  | "academy_exam";
+
+export interface AcademyEnvironmentReport {
+  modsClean: boolean;
+  activeModsCount: number;
+  activeMods: string[];
+  gameLogFound: boolean;
+  gameLogPath: string | null;
+  siiFound: boolean;
+  siiPath: string | null;
+  siiHash: string | null;
+  siiMtime: number | null;
+  siiFormat: string;
+  completedScenarios: string[];
+  scenarioStates: { scenarioId: string; state: number | null; stars: number | null }[];
+  prereqBooksVerifiedLocal: boolean;
+}
+
+export interface AcademyLiveStats {
+  active: boolean;
+  examId: string;
+  elapsedSec: number;
+  sampleCount: number;
+  movingSeconds: number;
+  stationarySeconds: number;
+  isMovingNow: boolean;
+  maxSpeedKmh: number;
+  gearSwitchCount: number;
+  reverseSeconds: number;
+  maxForwardG: number;
+  maxBrakeG: number;
+  maxLateralG: number;
+  impactCount: number;
+  startTruckDamage: number;
+  currentTruckDamage: number;
+  damageDelta: number;
+  blinkerUsageCount: number;
+  hazardUsageCount: number;
+}
+
+export interface AcademyExamStatusSubmission {
+  id: string;
+  examCode: string;
+  attemptNumber: number;
+  status: string;
+  statusLabel: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationSec: number;
+  modsClean: boolean;
+  prereqBooksVerified: boolean;
+  gearSwitchCount: number;
+  damageDelta: number;
+  aiCheckStatus: string;
+  aiVerdict: string | null;
+  aiScore: number | null;
+  aiCameraRulePassed: boolean | null;
+  aiDrivingSummary: string | null;
+  instructorRating: string | null;
+  instructorComment: string | null;
+  reviewedAt: string | null;
+}
+
+export interface AcademyExamStatusResponse {
+  success: boolean;
+  hasApplication: boolean;
+  applicationId?: string;
+  eligible: boolean;
+  ineligibleReason: string | null;
+  hasPendingReview?: boolean;
+  isWrittenPassed: boolean;
+  isPracticalPassed: boolean;
+  totalAttempts: number;
+  remainingAttempts: number;
+  todayAttempts: number;
+  dailyLimit: number;
+  totalLimit: number;
+  steamAcademy1CompletedCount: number;
+  steamAcademy1Total: number;
+  submissions: AcademyExamStatusSubmission[];
+}
