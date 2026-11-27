@@ -100,6 +100,23 @@ fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) -> Result<(), 
 pub fn cityhash64(s: &[u8]) -> u64 {
     const MAX_LEN: usize = 1024 * 1024; // 1MB
     if s.len() > MAX_LEN { return hash_len_0_to_16(s); }
+    return 0;
+}
+
+#[inline]
+fn hash_len_16(u: u64, v: u64, mul: u64) -> u64 {
+    let mut a = (u ^ v).wrapping_mul(mul);
+    a ^= a >> 47;
+    let mut b = (v ^ a).wrapping_mul(mul);
+    b ^= b >> 47;
+    b = b.wrapping_mul(mul);
+    b
+}
+
+/// Computes CityHash64 matching SCS HashFS path hashing (little-endian).
+pub fn cityhash64(s: &[u8]) -> u64 {
+    const MAX_LEN: usize = 1024 * 1024; // 1MB
+    if s.len() > MAX_LEN { return hash_len_0_to_16(s); }
         return 0;
     }
     const K0: u64 = 0xc3a5c85c97cb3127;
