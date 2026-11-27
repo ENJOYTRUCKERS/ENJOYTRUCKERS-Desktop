@@ -415,51 +415,52 @@ impl Default for AppConfig {
 
 pub fn get_config_path(app: &tauri::AppHandle) -> PathBuf {
     let mut path = match app.path().app_data_dir() {
-            Ok(dir) => dir,
-            Err(e) => {
-                eprintln!("Failed to get app data directory: {}. Exiting application.", e);
-
-                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-            }
-        };
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("Failed to get app data directory: {}. Falling back to current directory.", e);
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        }
+    };
     let _ = fs::create_dir_all(&path);
     path.push("config.enc");
     path
 }
 
-fn get_crypto_key() -> Key<Aes256Gcm> {
+fn get_crypto_key() -> Result<Key<Aes256Gcm>, String> {
     let hw_id = match machine_uid::get() {
-            Ok(id) => id,
-            Err(e) => {
-                eprintln!("Failed to get machine UID: {}", e);
-                return Err("Failed to get machine UID".to_string());
-            }
-        };
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("Failed to get machine UID: {}", e);
+            return Err(format!("Failed to get machine UID: {}", e));
+        }
+    };
     let mut hasher = Sha256::new();
     hasher.update(b"ENJOYTRUCKERS_SECURE_SALT_991823");
     hasher.update(hw_id.as_bytes());
     let result = hasher.finalize();
-    *Key::<Aes256Gcm>::from_slice(&result)
+    Ok(*Key::<Aes256Gcm>::from_slice(&result))
 }
 
 pub fn encrypt_data(plaintext: &str) -> Result<String, String> {
-    let key = get_crypto_key().map_err(|e| format!("Failed to get crypto key: {}", e))?;
+    let key = get_crypto_key()?;
     let cipher = Aes256Gcm::new(&key);
-    let nonce = Nonce::from_slice(&[0u8; 12]); // 12 bytes nonce
-    let ciphertext = cipher.encrypt(nonce, plaintext.as_bytes()).map_err(|e| format!("Encryption failed: {}", e))?;
-    Ok(b64.encode(ciphertext))
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let ciphertext = cipher
+        .encrypt(&nonce, plaintext.as_bytes())
+        .map_err(|e| format!("Encryption failed: {}", e))?;
+    let mut payload = nonce.to_vec();
+    payload.extend_from_slice(&ciphertext);
+    Ok(b64.encode(&payload))
 }
 
 pub fn decrypt_data(encoded: &str) -> Result<String, String> {
     let payload = b64.decode(encoded).map_err(|e| e.to_string())?;
-if payload.len() < 12 {;
     if payload.len() < 12 {
         return Err("Payload too short".into());
     }
     let (nonce_bytes, ciphertext) = payload.split_at(12);
     let nonce = Nonce::from_slice(nonce_bytes);
-let ciphertext = &payload[12..];
-    let key = get_crypto_key();
+    let key = get_crypto_key()?;
     let cipher = Aes256Gcm::new(&key);
     let plaintext = cipher
         .decrypt(nonce, ciphertext)
@@ -521,4 +522,23 @@ pub fn unix_secs_to_iso8601(secs: u64) -> String {
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
         year, m, d, hour, minute, second
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encrypt_decrypt_roundtrip_and_random_nonce() {
+        if get_crypto_key().is_err() {
+            // Skip roundtrip assertion in environments without a machine UID
+            return;
+        }
+        let secret = "vtc_telemetry_token_example";
+        let c1 = encrypt_data(secret).expect("encrypt_data c1");
+        let c2 = encrypt_data(secret).expect("encrypt_data c2");
+        assert_ne!(c1, c2, "Random nonce should produce distinct ciphertexts");
+        assert_eq!(decrypt_data(&c1).expect("decrypt c1"), secret);
+        assert_eq!(decrypt_data(&c2).expect("decrypt c2"), secret);
+    }
 }

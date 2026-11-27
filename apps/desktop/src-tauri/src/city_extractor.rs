@@ -46,9 +46,7 @@ fn read_build_id(app_id: &str) -> Option<String> {
     let manifest_name = format!("appmanifest_{}.acf", app_id);
     for steamapps in collect_steamapps_dirs() {
         let p = steamapps.join(&manifest_name);
-        if let Ok(content) = fs::read_to_string(&p).map_err(|_| log::error!("Failed to read file {:?}", p)) {
-            log::info!("Successfully read content from {:?}", p);
-
+        if let Ok(content) = fs::read_to_string(p) {
             for line in content.lines() {
                 let t = line.trim();
                 if t.starts_with("\"buildid\"") {
@@ -64,62 +62,32 @@ fn read_build_id(app_id: &str) -> Option<String> {
 }
 
 fn load_sync_state(app: &tauri::AppHandle) -> CitySyncState {
-    fn read_default_build_id(game: &str) -> Option<String> {
-        // ここにデフォルトのビルドIDを読み込むロジックを追加
-        None
-    }
-
     let dir = app
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."));
     let path = dir.join("city_sync_state.json");
     if let Ok(txt) = fs::read_to_string(path) {
-        serde_json::from_str(&txt).map_err(|e| log::error!("Failed to deserialize city sync state: {}", e)).unwrap()
+        serde_json::from_str(&txt).unwrap_or_default()
     } else {
-        CitySyncState { ets2_build_id: read_default_build_id("ets2"), ats_build_id: read_default_build_id("ats") }
+        CitySyncState::default()
     }
 }
 
-fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) -> Result<(), String> {
+fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) {
     let dir = app
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."));
-    if !dir.exists() { if fs::create_dir_all(&dir).is_err() { log::error!("Failed to create directory {:?}", dir); return Err("Failed to create directory".to_string()); } else { log::info!("Directory {:?} created successfully", dir); } }
-}
+    let _ = fs::create_dir_all(&dir);
     let path = dir.join("city_sync_state.json");
-    if let Ok(json) = serde_json::to_string_pretty(state).map_err(|e| log::error!("Failed to serialize city sync state: {}", e)) {
-        if let Err(e) = fs::write(path, json) { log::error!("Failed to write to {:?}: {}", path, e); return Err("Failed to write to file".to_string()); }
-}
+    if let Ok(json) = serde_json::to_string_pretty(state) {
+        let _ = fs::write(path, json);
     }
-    Ok(())
-  }
 }
 
 /// Computes CityHash64 matching SCS HashFS path hashing (little-endian).
 pub fn cityhash64(s: &[u8]) -> u64 {
-    const MAX_LEN: usize = 1024 * 1024; // 1MB
-    if s.len() > MAX_LEN { return hash_len_0_to_16(s); }
-    return 0;
-}
-
-#[inline]
-fn hash_len_16(u: u64, v: u64, mul: u64) -> u64 {
-    let mut a = (u ^ v).wrapping_mul(mul);
-    a ^= a >> 47;
-    let mut b = (v ^ a).wrapping_mul(mul);
-    b ^= b >> 47;
-    b = b.wrapping_mul(mul);
-    b
-}
-
-/// Computes CityHash64 matching SCS HashFS path hashing (little-endian).
-pub fn cityhash64(s: &[u8]) -> u64 {
-    const MAX_LEN: usize = 1024 * 1024; // 1MB
-    if s.len() > MAX_LEN { return hash_len_0_to_16(s); }
-        return 0;
-    }
     const K0: u64 = 0xc3a5c85c97cb3127;
     const K1: u64 = 0xb492b66fbe98f273;
     const K2: u64 = 0x9ae16a3b2f90404f;
@@ -248,7 +216,7 @@ pub fn cityhash64(s: &[u8]) -> u64 {
         std::mem::swap(&mut z, &mut x);
         pos += 64;
         rem -= 64;
-        if rem <= 64 || rem < 0 {
+        if rem <= 64 {
             break;
         }
     }
@@ -260,64 +228,40 @@ pub fn cityhash64(s: &[u8]) -> u64 {
 }
 
 fn read_u16_le(b: &[u8], off: usize) -> Option<u16> {
-    if off + 2 > b.len() {
-        log::error!("Error: Failed to read u16 at offset {}: out of bounds (buffer length {})", off, b.len());
-        return None;
-    }
     b.get(off..off + 2).map(|s| u16::from_le_bytes([s[0], s[1]]))
 }
 fn read_u32_le(b: &[u8], off: usize) -> Option<u32> {
-    if off + 4 > b.len() {
-        if off + 4 > b.len() {
-            log::error!("Error: Failed to read u32 at offset {}: out of bounds (buffer length {})", off, b.len());
-            return None;
-        }
-    }
-    b.get(off..off + 4).map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+    b.get(off..off + 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 fn read_u64_le(b: &[u8], off: usize) -> Option<u64> {
-    if off + 8 > b.len() {
-        if off + 8 > b.len() {
-            log::error!("Error: Failed to read u64 at offset {}: out of bounds (buffer length {})", off, b.len());
-            return None;
-        }
-    }
-    b.get(off..off + 8).map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
+    b.get(off..off + 8)
+        .map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
 }
 
 /// Parses an official HashFS v1 `.scs` archive into SII UTF-8 text snippets from relevant def/locale entries.
-fn extract_text_entries_hashfs_v1(file: &mut File) -> Result<Vec<(String, String)>, String> {
+fn extract_text_entries_hashfs_v1(file: &mut File) -> Vec<(String, String)> {
     let mut header = [0u8; 20];
-    if let Err(e) = file.seek(SeekFrom::Start(0)) {
-        log::error!("Failed to seek archive header: {}", e); return Err(format!("Failed to seek archive header: {}", e));
-        return Err(format!("Failed to seek archive header: {}", e));
-    }
-    if let Err(e) = file.read_exact(&mut header) {
-        log::error!("Failed to read archive header: {}", e);
-        return Err(format!("Failed to read archive header: {}", e));
+    if file.seek(SeekFrom::Start(0)).is_err() || file.read_exact(&mut header).is_err() {
+        return Vec::new();
     }
     if &header[0..4] != b"SCS#" {
-        return Err("Invalid archive header".to_string());
+        return Vec::new();
     }
-    let version = match read_u16_le(&header, 4) { Some(v) => v, None => return Err("Failed to read version".to_string()) };;
+    let version = read_u16_le(&header, 4).unwrap_or(0);
     if version != 1 {
-        return Err("Unsupported version".to_string());
+        return Vec::new();
     }
-    let entry_count = match read_u32_le(&header, 12) { Some(v) => v as usize, None => return Err("Failed to read entry count".to_string()) };
-if entry_count == 0 || entry_count > 500_000 {
-    log::error!("Invalid entry count: {}", entry_count); return Err("Invalid entry count".to_string());
-    return Err("Invalid entry count".to_string());
-}
-    let start_offset = match read_u32_le(&header, 16) { Some(v) => v as u64, None => return Err("Failed to read start offset".to_string()) };
+    let entry_count = read_u32_le(&header, 12).unwrap_or(0) as usize;
+    let start_offset = read_u32_le(&header, 16).unwrap_or(0) as u64;
+    if entry_count == 0 || entry_count > 500_000 {
+        return Vec::new();
+    }
 
     let table_len = entry_count.saturating_mul(32);
     let mut table = vec![0u8; table_len];
-    if let Err(e) = file.seek(SeekFrom::Start(start_offset)) {
-        log::error!("Failed to seek archive table: {}", e); return Err(format!("Failed to seek archive table: {}", e));
-        return Err(format!("Failed to seek archive table: {}", e));
-    }
-    if let Err(e) = file.read_exact(&mut table) {
-        log::error!("Failed to read archive table: {}", e); return Err(format!("Failed to read archive table: {}", e));
+    if file.seek(SeekFrom::Start(start_offset)).is_err() || file.read_exact(&mut table).is_err() {
+        return Vec::new();
     }
 
     struct V1Entry {
@@ -325,56 +269,16 @@ if entry_count == 0 || entry_count > 500_000 {
         flags: u32,
         size: u32,
         csize: u32,
-        name: String,
-        type_: String,
-        hash: u64,
-    }
-
-    struct V1Entry {
-    offset: u64,
-    flags: u32,
-    size: u32,
-    csize: u32,
-    name: String,
-    type_: String,
-    hash: u64,
-}
-    offset: u64,
-    flags: u32,
-    size: u32,
-    csize: u32,
-    name: String,
-    type_: String,
-    hash: u64,
-}
-        offset: u64,
-        flags: u32,
-        size: u32,
-        csize: u32,
-        flags: u32,
-        size: u32,
-        csize: u32,
-        name: String,
-        type_: String,
-        hash: u64,
-    }
-        offset: u64,
-        flags: u32,
-        size: u32,
-        csize: u32,
-        name: String,
-        type_: String,
-        hash: u64,
     }
     let mut by_hash = HashMap::with_capacity(entry_count);
-    for i in 0..entry_count.min(500_000) {
+    for i in 0..entry_count {
         let base = i * 32;
         let hash = read_u64_le(&table, base).unwrap_or(0);
         let offset = read_u64_le(&table, base + 8).unwrap_or(0);
         let flags = read_u32_le(&table, base + 16).unwrap_or(0);
         let size = read_u32_le(&table, base + 24).unwrap_or(0);
         let csize = read_u32_le(&table, base + 28).unwrap_or(0);
-        by_hash.insert(hash, V1Entry { offset, flags, size, csize, name: String::new(), type_: String::new(), hash });
+        by_hash.insert(hash, V1Entry { offset, flags, size, csize });
     }
 
     let read_entry = |f: &mut File, e: &V1Entry| -> Option<Vec<u8>> {

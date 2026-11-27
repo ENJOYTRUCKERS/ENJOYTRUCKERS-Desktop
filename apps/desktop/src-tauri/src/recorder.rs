@@ -134,9 +134,8 @@ impl SessionRecorder {
         is_loaded: bool,
         is_smart_auto_mode: bool,
     ) -> String {
-        let mut rng = rand::thread_rng();
         let now = now_unix_secs();
-        let rand_suffix = rand::random::<u64>();
+        let rand_suffix = rand::random::<u32>() % 10000;
         let sid = format!("tacho_{}_{}", now, rand_suffix);
 
         self.session_id = sid.clone();
@@ -299,19 +298,9 @@ impl SessionRecorder {
         if !self.active {
             return;
         }
-        if true {
+        if self.events.len() < 2000 {
             self.events.push(event.clone());
-            match self.append_wal_line(app, &serde_json::json!({ "kind": "event", "event": event })) {
-            Ok(_) => {},
-            Err(e) => {
-                eprintln!("Failed to append event to WAL: {}", e);
-            }
-        }
-            Ok(_) => {},
-            Err(e) => {
-                eprintln!("Failed to append event to WAL: {}", e);
-            }
-        }
+            self.append_wal_line(app, &serde_json::json!({ "kind": "event", "event": event }));
         }
     }
 
@@ -330,12 +319,12 @@ impl SessionRecorder {
         let now = now_unix_secs();
         let moved_sq =
             (tel.x - self.last_trace_x).powi(2) + (tel.z - self.last_trace_z).powi(2);
-        let is_stationary = tel.speed.abs() < 0.8 && moved_sq < 1.0;
+        let is_stationary = tel.speed.abs() < 0.8 && moved_sq < 0.25;
 
-        if is_stationary && self.last_trace_t > 0 && now.saturating_sub(self.last_trace_t) < 30 && moved_sq <= 100.0 {
+        if is_stationary && self.last_trace_t > 0 && now.saturating_sub(self.last_trace_t) < 30 {
             return;
         }
-        if !self.trace_rows.is_empty() && now < self.last_trace_t {
+        if !self.trace_rows.is_empty() && now <= self.last_trace_t {
             return;
         }
 
@@ -366,7 +355,7 @@ impl SessionRecorder {
             if tel.speed_limit > 0.0 {
                 serde_json::json!(tel.speed_limit.round())
             } else {
-                serde_json::json!(0)
+                serde_json::Value::Null
             },
             serde_json::json!(tel.engine_rpm.round()),
             serde_json::json!(tel.gear),
@@ -504,16 +493,15 @@ impl SessionRecorder {
 
         let raw_bytes = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
         {
-            let f = fs::File::create(&tmp_path).map_err(|e| { log::error!("Failed to create file: {}", e); e })?;
+            let f = fs::File::create(&tmp_path).map_err(|e| e.to_string())?;
             let mut encoder = GzEncoder::new(f, Compression::default());
-            encoder.write_all(&raw_bytes).map_err(|e| { log::error!("Failed to write to file: {}", e); e })?;
-            encoder.finish().map_err(|e| { log::error!("Failed to finish file encoding: {}", e); e })?;
+            encoder.write_all(&raw_bytes).map_err(|e| e.to_string())?;
+            encoder.finish().map_err(|e| e.to_string())?;
         }
-        fs::rename(&tmp_path, &final_path).map_err(|e| { log::error!("Failed to rename file: {}", e); e })?;
+        fs::rename(&tmp_path, &final_path).map_err(|e| e.to_string())?;
 
         // Reset session & WAL
         self.clear_wal(app);
-        self.append_wal_line(app, &serde_json::json!({ "kind": "session_end", "sessionId": self.session_id, "endedAt": unix_secs_to_iso8601(now_unix_secs()) }));
         self.active = false;
         self.session_id.clear();
         self.trace_rows.clear();
@@ -523,39 +511,24 @@ impl SessionRecorder {
         Ok(final_path)
     }
 
-    fn append_wal_line(&self, app: &tauri::AppHandle, val: &serde_json::Value) -> Result<(), String> {
+    fn append_wal_line(&self, app: &tauri::AppHandle, val: &serde_json::Value) {
         let wal_dir = get_wal_dir(app);
         let wal_path = wal_dir.join("active_session.jsonl");
-        let wal_path = wal_dir.join("active_session.jsonl");
-        if let Ok(line) = serde_json::to_string(val) {
-            if let Err(e) = writeln!(file, "{}", line) {
-                log::error!("Failed to write to WAL file: {}", e);
-                return Err(e.to_string());
+        match serde_json::to_string(val) {
+            Ok(line) => {
+                match OpenOptions::new().create(true).append(true).open(&wal_path) {
+                    Ok(mut file) => {
+                        if let Err(e) = writeln!(file, "{}", line) {
+                            eprintln!("Failed to write to WAL file {:?}: {}", wal_path, e);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to open WAL file {:?}: {}", wal_path, e);
+                    }
+                }
             }
-        } else {
-            log::error!("Failed to serialize WAL line: {}", val);
-            return Err("Failed to serialize WAL line".to_string());
-        }
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(wal_path).map_err(|e| { log::error!("Failed to open WAL file: {}", e); e })? {
-            let _ = writeln!(file, "{}", line).map_err(|e| { log::error!("Failed to write to WAL file: {}", e); })?
-        }
-            if let Err(e) = writeln!(file, "{}", line) {
-                log::error!("Failed to write to WAL file: {}", e);
-            }
-        } else {
-            log::error!("Failed to serialize WAL line: {}", val);
-        }
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(wal_path).map_err(|e| { log::error!("Failed to open WAL file: {}", e); e })? {
-            let _ = writeln!(file, "{}", line).map_err(|e| { log::error!("Failed to write to WAL file: {}", e); })?
-        }
-            if let Err(e) = writeln!(file, "{}", line) {
-                log::error!("Failed to write to WAL file: {}", e);
-            }
-        } else {
-            log::error!("Failed to serialize WAL line: {}", val);
-        }
-            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(wal_path).map_err(|e| { log::error!("Failed to open WAL file: {}", e); e })? {
-                let _ = writeln!(file, "{}", line).map_err(|e| { log::error!("Failed to write to WAL file: {}", e); })?
+            Err(e) => {
+                eprintln!("Failed to serialize WAL line: {}", e);
             }
         }
     }

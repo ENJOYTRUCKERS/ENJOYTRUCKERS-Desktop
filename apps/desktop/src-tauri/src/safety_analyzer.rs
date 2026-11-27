@@ -73,11 +73,11 @@ pub struct SafetyAnalyzer {
     last_impact_trigger: f64,
     last_jerk_trigger: f64,
 
-    pub harsh_accel_count: u64,
-    pub harsh_brake_count: u64,
-    pub harsh_corner_count: u64,
-    pub high_jerk_count: u64,
-    pub impact_count: u64,
+    pub harsh_accel_count: u32,
+    pub harsh_brake_count: u32,
+    pub harsh_corner_count: u32,
+    pub high_jerk_count: u32,
+    pub impact_count: u32,
 
     pub max_forward_g: f64,
     pub max_brake_g: f64,
@@ -102,11 +102,11 @@ pub struct SafetyAnalyzer {
 
     pub driving_samples: u64,
     pub compliant_speed_samples: u64,
-    pub speeding_seconds: u64,
+    pub speeding_seconds: u32,
     pub max_speed_over_kmh: f64,
-    pub rpm_over_seconds: u64,
-    pub idle_seconds: u64,
-    pub shoulder_offroad_seconds: u64,
+    pub rpm_over_seconds: u32,
+    pub idle_seconds: u32,
+    pub shoulder_offroad_seconds: u32,
 }
 
 impl Default for SafetyAnalyzer {
@@ -166,7 +166,7 @@ impl SafetyAnalyzer {
     }
 
     pub fn reset(&mut self) {
-        *self = Self::default();
+        *self = Self::new();
     }
 
     fn reset_sustain_windows(&mut self) {
@@ -217,8 +217,6 @@ impl SafetyAnalyzer {
         }
 
         if t_sec < self.excluded_until_sec || speed_kmh.abs() <= 3.0 {
-            self.prev_active_t_sec = Some(t_sec);
-
             self.window_buf.clear();
             self.accel_start = None;
             self.brake_start = None;
@@ -228,6 +226,7 @@ impl SafetyAnalyzer {
             self.smoothed_g_lat = g_lat;
             self.smoothed_g_vert = g_vert;
             self.smoothed_g_long = g_long;
+            self.prev_active_t_sec = Some(t_sec);
             return emitted;
         }
 
@@ -242,29 +241,29 @@ impl SafetyAnalyzer {
             g_vert: if g_vert.is_finite() { g_vert } else { 0.0 },
             g_long: if g_long.is_finite() { g_long } else { 0.0 },
         });
-        let mut iterations = 0;
-while self.window_buf.len() > 1 && iterations < 100 && self.window_buf.len() > 1 {
+        while self.window_buf.len() > 1 {
             if let Some(front) = self.window_buf.front() {
-                if t_sec - front.t_sec > 0.4 && iterations < 100 {
+                if t_sec - front.t_sec > 0.4 {
                     self.window_buf.pop_front();
                     continue;
                 }
             }
-            iterations += 1;
-break;
+            break;
         }
 
-        if self.window_buf.is_empty() { log::error!("window_buf is empty, skipping processing...")); return emitted; }
-let n = self.window_buf.len() as f64;
+        if self.window_buf.is_empty() {
+            return emitted;
+        }
+        let n = self.window_buf.len() as f64;
         let (mut sum_gx, mut sum_gy, mut sum_gz) = (0.0, 0.0, 0.0);
         for item in &self.window_buf {
             sum_gx += item.g_lat;
             sum_gy += item.g_vert;
             sum_gz += item.g_long;
         }
-        let avg_gx = if self.window_buf.is_empty() { 0.0 } else { sum_gx / n };
-        let avg_gy = if self.window_buf.is_empty() { 0.0 } else { sum_gy / n };
-        let avg_gz = if self.window_buf.is_empty() { 0.0 } else { sum_gz / n };
+        let avg_gx = (sum_gx / n).clamp(-100.0, 100.0);
+        let avg_gy = (sum_gy / n).clamp(-100.0, 100.0);
+        let avg_gz = (sum_gz / n).clamp(-100.0, 100.0);
 
         self.smoothed_g_lat = avg_gx;
         self.smoothed_g_vert = avg_gy;
@@ -274,12 +273,7 @@ let n = self.window_buf.len() as f64;
         let abs_gy = avg_gy.abs();
         let forward_g = if avg_gz > 0.0 { avg_gz } else { 0.0 };
         let brake_g = if avg_gz < 0.0 { -avg_gz } else { 0.0 };
-        if avg_gx.abs() > 100.0 || avg_gy.abs() > 100.0 || avg_gz.abs() > 100.0 { // Clip values to prevent incorrect calculations
-    self.smoothed_g_lat = avg_gx.clamp(-100.0, 100.0);
-    self.smoothed_g_vert = avg_gy.clamp(-100.0, 100.0);
-    self.smoothed_g_long = avg_gz.clamp(-100.0, 100.0);
-}
-let composite_g = (avg_gx * avg_gx + avg_gy * avg_gy + avg_gz * avg_gz).sqrt();
+        let composite_g = (avg_gx * avg_gx + avg_gy * avg_gy + avg_gz * avg_gz).sqrt();
 
         if forward_g > self.max_forward_g {
             self.max_forward_g = forward_g;
@@ -405,7 +399,7 @@ let composite_g = (avg_gx * avg_gx + avg_gy * avg_gy + avg_gz * avg_gz).sqrt();
 
         if let Some(prev_t) = self.prev_active_t_sec {
             if t_sec > prev_t {
-                
+                let jdt = (t_sec - prev_t).max(0.05);
                 let jmag = (((avg_gx - self.prev_avg_gx) / jdt).powi(2)
                     + ((avg_gz - self.prev_avg_gz) / jdt).powi(2))
                 .sqrt();
@@ -586,5 +580,40 @@ let composite_g = (avg_gx * avg_gx + avg_gy * avg_gy + avg_gz * avg_gz).sqrt();
             "idleSeconds": self.idle_seconds,
             "shoulderOffroadSeconds": self.shoulder_offroad_seconds,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn on_20hz_sample_emits_event_with_y_set_to_z() {
+        let mut analyzer = SafetyAnalyzer::new();
+        let mut events = Vec::new();
+        for i in 0..15 {
+            let t = 10.0 + (i as f64) * 0.05;
+            let emitted = analyzer.on_20hz_sample(t, false, 60.0, 80.0, 123.5, -456.25, 0.0, 0.0, 0.5);
+            events.extend(emitted);
+        }
+        assert!(!events.is_empty(), "Expected harsh_accel event to be emitted");
+        let ev = &events[0];
+        assert!((ev.x - 123.5).abs() < 1e-9);
+        assert!((ev.y - (-456.25)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn on_1hz_tick_tracks_430_warning_and_violation() {
+        let mut analyzer = SafetyAnalyzer::new();
+        for _ in 0..2520 {
+            analyzer.on_1hz_tick(true, false, true, 70.0, 80.0, 1400.0, 2200.0, true, false, 5);
+        }
+        assert!(analyzer.is_430_warning);
+        assert!(!analyzer.is_430_violation);
+
+        for _ in 0..400 {
+            analyzer.on_1hz_tick(true, false, true, 70.0, 80.0, 1400.0, 2200.0, true, false, 5);
+        }
+        assert!(analyzer.is_430_violation);
     }
 }
