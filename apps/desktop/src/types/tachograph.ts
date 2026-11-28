@@ -443,3 +443,38 @@ export interface AcademyExamStatusResponse {
   steamAcademy1Total: number;
   submissions: AcademyExamStatusSubmission[];
 }
+
+export interface RecordingQualityPreset {
+  id: string;
+  label: string;
+  width: number;
+  height: number;
+  fps: number;
+  videoBitrateBps: number;
+  description: string;
+}
+
+export interface SystemRecordingProfile {
+  cpuThreads: number;
+  totalMemoryGb: number;
+  recommendedPresetId: string;
+  recommendationReason: string;
+  presets: RecordingQualityPreset[];
+  gameRunning: boolean;
+  gamePid: number | null;
+  gameProcessName: string | null;
+}
+
+export interface GameAudioCaptureInfo {
+  active: boolean;
+  pid: number;
+  processName: string;
+  sampleRate: number;
+  channels: number;
+}
+
+export interface GameAudioPcmChunk {
+  sampleRate: number;
+  channels: number;
+  pcm16Base64: string;
+}

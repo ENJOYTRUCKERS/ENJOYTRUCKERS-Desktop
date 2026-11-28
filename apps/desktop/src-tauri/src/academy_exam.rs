@@ -13,9 +13,11 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::game_audio;
 use crate::plugin_manager::{collect_steamapps_dirs, get_documents_dirs};
 use crate::telemetry::TelemetryData;
 use crate::AppState;
+use sysinfo::System;
 
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
 
@@ -25,6 +27,117 @@ const SCS_SAVE_AES_KEY: &[u8; 32] = &[
     0xc4, 0x73, 0x71, 0x56, 0x3f, 0xbd, 0x1f, 0x3c,
     0x9e, 0xde, 0x6b, 0x11, 0x82, 0x5a, 0x5d, 0x0a,
 ];
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingQualityPreset {
+    pub id: String,
+    pub label: String,
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub video_bitrate_bps: u32,
+    pub description: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemRecordingProfile {
+    pub cpu_threads: usize,
+    pub total_memory_gb: f64,
+    pub recommended_preset_id: String,
+    pub recommendation_reason: String,
+    pub presets: Vec<RecordingQualityPreset>,
+    pub game_running: bool,
+    pub game_pid: Option<u32>,
+    pub game_process_name: Option<String>,
+}
+
+#[tauri::command]
+pub fn detect_recording_profile() -> SystemRecordingProfile {
+    let mut sys = System::new();
+    sys.refresh_cpu_all();
+    sys.refresh_memory();
+
+    let cpu_threads = sys.cpus().len().max(1);
+    let total_mem_bytes = sys.total_memory();
+    let total_memory_gb =
+        ((total_mem_bytes as f64) / (1024.0 * 1024.0 * 1024.0) * 10.0).round() / 10.0;
+
+    let presets = vec![
+        RecordingQualityPreset {
+            id: "standard_720p30".to_string(),
+            label: "標準 (720p / 30fps)".to_string(),
+            width: 1280,
+            height: 720,
+            fps: 30,
+            video_bitrate_bps: 2_500_000,
+            description: "試験最低要件・省負荷設定（約2.5 Mbps）".to_string(),
+        },
+        RecordingQualityPreset {
+            id: "high_1080p30".to_string(),
+            label: "高画質 (1080p / 30fps)".to_string(),
+            width: 1920,
+            height: 1080,
+            fps: 30,
+            video_bitrate_bps: 4_500_000,
+            description: "フルHD・文字やミラーが見やすい推奨設定（約4.5 Mbps）".to_string(),
+        },
+        RecordingQualityPreset {
+            id: "ultra_1080p60".to_string(),
+            label: "最高画質 (1080p / 60fps)".to_string(),
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            video_bitrate_bps: 6_500_000,
+            description: "ハイスペックPC向け・滑らか60fps（約6.5 Mbps）".to_string(),
+        },
+    ];
+
+    let (recommended_preset_id, recommendation_reason) =
+        if cpu_threads >= 12 && total_memory_gb >= 15.5 {
+            (
+                "ultra_1080p60".to_string(),
+                format!(
+                    "CPU {}スレッド / メモリ {:.1}GB のハイスペック環境のため 1080p 60fps を自動選択しました。",
+                    cpu_threads, total_memory_gb
+                ),
+            )
+        } else if cpu_threads >= 6 && total_memory_gb >= 11.5 {
+            (
+                "high_1080p30".to_string(),
+                format!(
+                    "CPU {}スレッド / メモリ {:.1}GB のミドル〜ハイ環境のため 1080p 30fps を自動選択しました。",
+                    cpu_threads, total_memory_gb
+                ),
+            )
+        } else {
+            (
+                "standard_720p30".to_string(),
+                format!(
+                    "CPU {}スレッド / メモリ {:.1}GB のため安定した動作を優先し 720p 30fps（最低保証品質）を自動選択しました。",
+                    cpu_threads, total_memory_gb
+                ),
+            )
+        };
+
+    let game_proc = game_audio::find_ets2_process();
+    let (game_running, game_pid, game_process_name) = match game_proc {
+        Some((pid, name)) => (true, Some(pid), Some(name)),
+        None => (false, None, None),
+    };
+
+    SystemRecordingProfile {
+        cpu_threads,
+        total_memory_gb,
+        recommended_preset_id,
+        recommendation_reason,
+        presets,
+        game_running,
+        game_pid,
+        game_process_name,
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]

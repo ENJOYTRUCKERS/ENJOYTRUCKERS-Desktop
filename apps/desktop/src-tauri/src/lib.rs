@@ -2,6 +2,7 @@ pub mod academy_exam;
 pub mod city_extractor;
 pub mod companion_server;
 pub mod dashcam;
+pub mod game_audio;
 pub mod overlay;
 pub mod plugin_manager;
 pub mod recorder;
@@ -536,6 +537,7 @@ pub fn run() {
         })
         .manage(overlay_manager)
         .manage(companion_manager)
+        .manage(game_audio::GameAudioManager::default())
         .setup(move |app| {
             let args: Vec<String> = std::env::args().collect();
             if args.contains(&"--minimized".to_string()) {
@@ -1089,6 +1091,9 @@ pub fn run() {
             academy_exam::academy_video_finalize,
             academy_exam::academy_upload_submission,
             academy_exam::academy_cleanup_local_video,
+            academy_exam::detect_recording_profile,
+            game_audio::start_game_audio_capture,
+            game_audio::stop_game_audio_capture,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
