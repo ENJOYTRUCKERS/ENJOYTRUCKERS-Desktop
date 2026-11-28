@@ -37,8 +37,8 @@ fn capture_primary_screen_png(out_path: &PathBuf) -> Result<(), String> {
         .map_err(|e| format!("Failed to invoke PowerShell dashcam capture: {}", e))?;
 
     if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Dashcam screenshot capture failed: {}", err));
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(format!("PowerShell dashcam capture error: {}", err));
     }
     Ok(())
 }
@@ -66,13 +66,19 @@ pub fn capture_dashcam_screenshot(
     let _ = fs::create_dir_all(&tmp_dir);
     let tmp_path = tmp_dir.join(format!("dashcam_{}.png", now_unix_ms()));
 
-    capture_primary_screen_png(&tmp_path)?;
-    let png_bytes = fs::read(&tmp_path).map_err(|e| e.to_string())?;
-    let _ = fs::remove_file(&tmp_path);
+    let capture_result = (|| {
+        capture_primary_screen_png(&tmp_path)?;
+        let read_res = fs::read(&tmp_path).map_err(|e| e.to_string());
+        if let Err(e) = fs::remove_file(&tmp_path) {
+            eprintln!("Failed to remove temp file {}: {}", tmp_path.display(), e);
+        }
+        read_res
+    })();
+    let png_bytes = capture_result?;
 
     let encoded = b64.encode(&png_bytes);
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(20))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -91,20 +97,26 @@ pub fn capture_dashcam_screenshot(
         .send()
         .map_err(|e| e.to_string())?;
 
-    if !res.status().is_success() {
-        return Err(format!("Dashcam upload HTTP {}", res.status()));
+    let status = res.status();
+    let resp_text = res.text().unwrap_or_default();
+    if !status.is_success() {
+        eprintln!("Dashcam upload HTTP {}: {}", status, resp_text);
+        return Err(format!("Dashcam upload failed with status {}: {}", status, resp_text));
     }
 
-    let val: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+    let val: serde_json::Value = serde_json::from_str(&resp_text).map_err(|e| {
+        eprintln!("Failed to parse JSON response: {}. Body: {}", e, resp_text);
+        format!("Failed to parse JSON response: {}", e)
+    })?;
     let screenshot_id = val
         .get("screenshotId")
         .and_then(|v| v.as_str())
-        .unwrap_or("")
+        .ok_or_else(|| "Missing 'screenshotId' in response".to_string())?
         .to_string();
     let rel_url = val
         .get("url")
         .and_then(|v| v.as_str())
-        .unwrap_or("")
+        .ok_or_else(|| "Missing 'url' in response".to_string())?
         .to_string();
 
     Ok(DashcamUploadResult {

@@ -37,7 +37,7 @@ impl CompanionServerManager {
 }
 
 pub fn detect_lan_ip() -> Option<String> {
-    let socket = match UdpSocket::bind("0.0.0.0:0") { Ok(s) => s, Err(e) => { eprintln!("Failed to bind UdpSocket: {}", e); return None; } }; if let Err(e) = socket.connect("8.8.8.8:80") { eprintln!("Failed to connect UdpSocket: {}", e); return None; }
+    let socket = match UdpSocket::bind("0.0.0.0:0") { Ok(s) => s, Err(e) => { eprintln!("Failed to bind UdpSocket: {}", e); return None; } }; if let Err(e) = socket.connect("8.8.8.8:80") { eprintln!("Failed to connect UdpSocket: {}", e); drop(socket); return None; }
     let addr = socket.local_addr().ok()?;
     let ip = addr.ip().to_string();
     if ip == "0.0.0.0" || ip == "127.0.0.1" {
@@ -108,11 +108,21 @@ async function refresh() {
   } catch {}
 }
 async function setWork(wt) {
-  await fetch('/api/work', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ workType: wt }) });
+  try {
+    const r = await fetch('/api/work', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ workType: wt }) });
+    if (!r.ok) console.error('Failed to set work status');
+  } catch (e) {
+    console.error('Network error during setWork:', e);
+  }
   refresh();
 }
 async function toggleSos() {
-  await fetch('/api/sos', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({}) });
+  try {
+    const r = await fetch('/api/sos', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({}) });
+    if (!r.ok) console.error('Failed to toggle SOS');
+  } catch (e) {
+    console.error('Network error during toggleSos:', e);
+  }
   refresh();
 }
 refresh();
@@ -127,12 +137,9 @@ pub fn start_companion_loop(
     telemetry: Arc<Mutex<TelemetryData>>,
     work_state: Arc<Mutex<WorkState>>,
 ) -> Result<(), String> {
-    let mut running_lock = running.lock().unwrap();
-    if *running_lock {
+    if running.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
-    *running_lock = true;
-    drop(running_lock);
 
     let server = Server::http("0.0.0.0:3002").map_err(|e| {
         running.store(false, Ordering::SeqCst);
@@ -140,9 +147,11 @@ pub fn start_companion_loop(
     })?;
 
     std::thread::spawn(move || {
-        while running.load(Ordering::Relaxed) {
+        let mut consecutive_errors: u32 = 0;
+        while running.load(Ordering::SeqCst) {
             match server.recv_timeout(Duration::from_millis(250)) {
                 Ok(Some(mut req)) => {
+                    consecutive_errors = 0;
                     let url = req.url().to_string();
                     let method = req.method().clone();
 
@@ -153,8 +162,15 @@ pub fn start_companion_loop(
                         );
                         let _ = req.respond(resp);
                     } else if method == Method::Get && url.starts_with("/api/state") {
-                        let speed = telemetry.lock().unwrap().speed.abs();
-                        let ws = work_state.lock().unwrap().clone();
+                        let speed = telemetry
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .speed
+                            .abs();
+                        let ws = work_state
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .clone();
                         let json = serde_json::json!({
                             "speed": speed,
                             "workType": ws.work_type.as_str(),
@@ -175,18 +191,44 @@ pub fn start_companion_loop(
                         let _ = req.respond(resp);
                     } else if method == Method::Post && url.starts_with("/api/work") {
                         let mut body = String::new();
-                        let read_result = req.as_reader().read_to_string(&mut body); if let Err(e) = read_result { eprintln!("Failed to read request body: {:?}", e); let resp = Response::from_string("Failed to read request body").with_status_code(400).with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..]).unwrap()); let _ = req.respond(resp); continue; } else if let Err(e) = serde_json::from_str::<serde_json::Value>(&body) { eprintln!("Failed to parse JSON: {:?}", e); let resp = Response::from_string(format!("Failed to parse JSON: {}", e)).with_status_code(400).with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..]).unwrap()); let _ = req.respond(resp); continue; }
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
-                            if let Some(wt_str) = v.get("workType").and_then(|x| x.as_str()) {
-                                let wt = WorkType::from_str_lossy(wt_str);
-                                let _ = app.emit("companion_work_command", wt.as_str());
+                        if let Err(e) = req.as_reader().read_to_string(&mut body) {
+                            eprintln!("Failed to read request body: {:?}", e);
+                            let resp = Response::from_string("{\"error\":\"Failed to read request body\"}")
+                                .with_status_code(400)
+                                .with_header(
+                                    Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                                        .unwrap(),
+                                );
+                            let _ = req.respond(resp);
+                            continue;
+                        }
+                        match serde_json::from_str::<serde_json::Value>(&body) {
+                            Ok(v) => {
+                                if let Some(wt_str) = v.get("workType").and_then(|x| x.as_str()) {
+                                    let wt = WorkType::from_str_lossy(wt_str);
+                                    let _ = app.emit("companion_work_command", wt.as_str());
+                                }
+                                let resp = Response::from_string("{\"ok\":true}").with_header(
+                                    Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                                        .unwrap(),
+                                );
+                                let _ = req.respond(resp);
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to parse JSON: {}", e);
+                                let err_json = serde_json::json!({
+                                    "error": format!("Failed to parse JSON: {}", e)
+                                })
+                                .to_string();
+                                let resp = Response::from_string(err_json)
+                                    .with_status_code(400)
+                                    .with_header(
+                                        Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                                            .unwrap(),
+                                    );
+                                let _ = req.respond(resp);
                             }
                         }
-                        let resp = Response::from_string("{\"ok\":true}").with_header(
-                            Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
-                                .unwrap(),
-                        );
-                        let _ = req.respond(resp);
                     } else if method == Method::Post && url.starts_with("/api/sos") {
                         let _ = app.emit("companion_sos_toggle", true);
                         let resp = Response::from_string("{\"ok\":true}").with_header(
@@ -195,11 +237,25 @@ pub fn start_companion_loop(
                         );
                         let _ = req.respond(resp);
                     } else {
-                        let _ = req.respond(Response::from_string("Not Found").with_status_code(404).with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..]).unwrap()));
+                        let _ = req.respond(
+                            Response::from_string("Not Found")
+                                .with_status_code(404)
+                                .with_header(
+                                    Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..])
+                                        .unwrap(),
+                                ),
+                        );
                     }
                 }
                 Ok(None) => {}
-                Err(e) => { eprintln!("Error receiving request: {}", e); running.store(false, Ordering::SeqCst); return Err(format!("Error receiving request: {}", e)); }
+                Err(e) => {
+                    eprintln!("Error receiving companion request: {}", e);
+                    consecutive_errors += 1;
+                    if !running.load(Ordering::SeqCst) || consecutive_errors >= 20 {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
             }
         }
         running.store(false, Ordering::SeqCst);

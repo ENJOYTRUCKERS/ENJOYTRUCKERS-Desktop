@@ -47,19 +47,12 @@ fn read_build_id(app_id: &str) -> Option<String> {
     for steamapps in collect_steamapps_dirs() {
         let p = steamapps.join(&manifest_name);
         if let Ok(content) = fs::read_to_string(p) {
-            log::info!("Successfully read content from {:?}", p);
-
             for line in content.lines() {
                 let t = line.trim();
                 if t.starts_with("\"buildid\"") {
                     let parts: Vec<&str> = t.split('"').filter(|s| !s.trim().is_empty()).collect();
                     if parts.len() >= 2 && parts[0] == "buildid" {
-                        return Ok(parts[1].trim().to_string());
-        }
-    }
-}
-log::error!("Failed to find build ID in {:?}", p);
-None
+                        return Some(parts[1].trim().to_string());
                     }
                 }
             }
@@ -69,11 +62,6 @@ None
 }
 
 fn load_sync_state(app: &tauri::AppHandle) -> CitySyncState {
-    fn read_default_build_id(game: &str) -> Option<String> {
-        // ここにデフォルトのビルドIDを読み込むロジックを追加
-        None
-    }
-
     let dir = app
         .path()
         .app_data_dir()
@@ -82,7 +70,7 @@ fn load_sync_state(app: &tauri::AppHandle) -> CitySyncState {
     if let Ok(txt) = fs::read_to_string(path) {
         serde_json::from_str(&txt).unwrap_or_default()
     } else {
-        CitySyncState { ets2_build_id: read_default_build_id("ets2"), ats_build_id: read_default_build_id("ats") }
+        CitySyncState::default()
     }
 }
 
@@ -91,24 +79,15 @@ fn save_sync_state(app: &tauri::AppHandle, state: &CitySyncState) {
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."));
-    if let Err(e) = fs::create_dir_all(&dir) {
-    log::error!("Failed to create directory {:?}: {}", dir, e);
-}
+    let _ = fs::create_dir_all(&dir);
     let path = dir.join("city_sync_state.json");
     if let Ok(json) = serde_json::to_string_pretty(state) {
-        if let Err(e) = fs::write(path, json) {
-    log::error!("Failed to write to {:?}: {}", path, e);
-}
+        let _ = fs::write(path, json);
     }
 }
 
 /// Computes CityHash64 matching SCS HashFS path hashing (little-endian).
 pub fn cityhash64(s: &[u8]) -> u64 {
-    const MAX_LEN: usize = 1024 * 1024; // 1MB
-    if s.len() > MAX_LEN { eprintln!("Input data is too long"); return 0; }
-        eprintln!("Input data is too long");
-        return 0;
-    }
     const K0: u64 = 0xc3a5c85c97cb3127;
     const K1: u64 = 0xb492b66fbe98f273;
     const K2: u64 = 0x9ae16a3b2f90404f;
@@ -237,7 +216,7 @@ pub fn cityhash64(s: &[u8]) -> u64 {
         std::mem::swap(&mut z, &mut x);
         pos += 64;
         rem -= 64;
-        if rem <= 64 || rem < 0 {
+        if rem <= 64 {
             break;
         }
     }
@@ -249,74 +228,40 @@ pub fn cityhash64(s: &[u8]) -> u64 {
 }
 
 fn read_u16_le(b: &[u8], off: usize) -> Option<u16> {
-    if off + 2 > b.len() {
-        eprintln!("Error: Failed to read u16 at offset {}: out of bounds (buffer length {})", off, b.len());
-        return None;
-    }
-    b.get(off..off + 2).map(|s| u16::from_le_bytes([s[0], s[1]])).or_else(|| {
-        eprintln!("Failed to read u16 at offset {}", off);
-        None
-    })
+    b.get(off..off + 2).map(|s| u16::from_le_bytes([s[0], s[1]]))
 }
 fn read_u32_le(b: &[u8], off: usize) -> Option<u32> {
-    if off + 4 > b.len() {
-        eprintln!("Error: Failed to read u32 at offset {}: out of bounds (buffer length {})", off, b.len());
-        return None;
-    }
     b.get(off..off + 4)
         .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
-        .or_else(|| {
-            eprintln!("Failed to read u32 at offset {}", off);
-            None
-        })
 }
 fn read_u64_le(b: &[u8], off: usize) -> Option<u64> {
-    if off + 8 > b.len() {
-        eprintln!("Error: Failed to read u64 at offset {}: out of bounds (buffer length {})", off, b.len());
-        return None;
-    }
     b.get(off..off + 8)
         .map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
-        .or_else(|| {
-            eprintln!("Failed to read u64 at offset {}", off);
-            None
-        })
 }
 
 /// Parses an official HashFS v1 `.scs` archive into SII UTF-8 text snippets from relevant def/locale entries.
 fn extract_text_entries_hashfs_v1(file: &mut File) -> Vec<(String, String)> {
     let mut header = [0u8; 20];
-    if let Err(e) = file.seek(SeekFrom::Start(0)) {
-        log::error!("Failed to seek archive header: {}", e);
-        return Err("Failed to seek archive header".to_string());
-    }
-    if let Err(e) = file.read_exact(&mut header) {
-        log::error!("Failed to read archive header: {}", e);
-        return Err("Failed to read archive header".to_string());
+    if file.seek(SeekFrom::Start(0)).is_err() || file.read_exact(&mut header).is_err() {
+        return Vec::new();
     }
     if &header[0..4] != b"SCS#" {
-        return Err("Invalid archive header".to_string());
+        return Vec::new();
     }
-    let version = read_u16_le(&header, 4).unwrap_or_else(|| { log::error!("Failed to read version"); 0 });
+    let version = read_u16_le(&header, 4).unwrap_or(0);
     if version != 1 {
-        return Err("Unsupported version".to_string());
+        return Vec::new();
     }
-    let entry_count = read_u32_le(&header, 12).unwrap_or_else(|| { log::error!("Failed to read entry count"); 0 }) as usize;
-    let start_offset = read_u32_le(&header, 16).unwrap_or_else(|| { log::error!("Failed to read start offset"); 0 }) as u64;
-    if entry_count == 0 || entry_count > 500_000 || entry_count > table.len() / 32 { log::error!("Invalid entry count: {}", entry_count); return Err("Invalid entry count".to_string()); }
+    let entry_count = read_u32_le(&header, 12).unwrap_or(0) as usize;
+    let start_offset = read_u32_le(&header, 16).unwrap_or(0) as u64;
+    if entry_count == 0 || entry_count > 500_000 {
         return Vec::new();
     }
 
     let table_len = entry_count.saturating_mul(32);
     let mut table = vec![0u8; table_len];
-    let mut table = vec![0u8; table_len];
-    if let Err(e) = file.seek(SeekFrom::Start(start_offset)) {
-        log::error!("Failed to seek archive table: {}", e);
-        return Err("Failed to seek archive table".to_string());
-    }
-    if let Err(e) = file.read_exact(&mut table) {
-        log::error!("Failed to read archive table: {}", e);
-        return Err(e.to_string());
+    if file.seek(SeekFrom::Start(start_offset)).is_err() || file.read_exact(&mut table).is_err() {
+        return Vec::new();
     }
 
     struct V1Entry {

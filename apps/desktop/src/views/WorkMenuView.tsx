@@ -270,7 +270,12 @@ export const WorkMenuView: React.FC<WorkMenuViewProps> = ({
       icon: <Sparkles className="w-8 h-8 mb-1.5" strokeWidth={1.8} />,
       action: () => onNavigate("return_garage"),
     },
-    null,
+    {
+      key: "academy_exam",
+      label: "技能試験",
+      icon: <UserCheck className="w-8 h-8 mb-1.5" strokeWidth={1.8} />,
+      action: () => onNavigate("academy_exam"),
+    },
     null,
     null,
     null,
