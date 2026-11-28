@@ -1,5 +1,5 @@
 import React from "react";
-import { Settings } from "lucide-react";
+import { FlaskConical, GraduationCap, Settings } from "lucide-react";
 import type {
   CompanionInfo,
   DesktopFeatureFlags,
@@ -13,6 +13,8 @@ interface SettingsViewProps {
   overlayState: OverlayState;
   companionInfo: CompanionInfo | null;
   featureFlags: DesktopFeatureFlags;
+  canUseTestMode?: boolean;
+  onEnterAcademyTestMode?: () => void;
   onToggleSmartAuto: (enabled: boolean) => void;
   onToggleVoice: (enabled: boolean) => void;
   onChangeDrivingPattern: (p: "A" | "B" | "C") => void;
@@ -49,6 +51,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   overlayState,
   companionInfo,
   featureFlags,
+  canUseTestMode = false,
+  onEnterAcademyTestMode,
   onToggleSmartAuto,
   onToggleVoice,
   onChangeDrivingPattern,
@@ -217,6 +221,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             })}
           </div>
         </div>
+
+        {canUseTestMode && onEnterAcademyTestMode && (
+          <div className="bg-[#1b142c] border border-purple-500/40 p-2.5 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-bold text-purple-300 flex items-center gap-1.5">
+                <FlaskConical className="w-3.5 h-3.5 shrink-0" />
+                <span>開発・テストモード (Founder限定)</span>
+              </div>
+              <p className="text-[11px] text-zinc-300 mt-0.5 leading-snug">
+                研修生専用UI・録画・Google Drive・AI一次チェック・審査画面まで本番データを汚さず一気通貫で検証します。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onEnterAcademyTestMode}
+              className="shrink-0 px-3 py-2 bg-gradient-to-r from-[#ff1155] to-purple-600 hover:opacity-95 text-white font-bold rounded-[2px] flex items-center gap-1.5"
+            >
+              <GraduationCap className="w-3.5 h-3.5" />
+              <span>技能研修テストモードを起動</span>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="bg-[#222436] px-3 py-2 border-t border-[#32344a] flex items-center justify-between shrink-0">

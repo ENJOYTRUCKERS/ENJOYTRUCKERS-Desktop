@@ -38,10 +38,12 @@ interface AcademyExamViewProps {
   telemetry: TelemetryData;
   isGameConnected: boolean;
   isTraineeOnly?: boolean;
+  isTestMode?: boolean;
   driverName?: string;
   traineeId?: string;
   onOpenDiagnostics?: () => void;
   onSwitchAccount?: () => void;
+  onExitTestMode?: () => void;
   onOverlayChange?: (next: OverlayState) => void;
   onBack: () => void;
 }
@@ -101,10 +103,12 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
   telemetry,
   isGameConnected,
   isTraineeOnly = false,
+  isTestMode = false,
   driverName = "研修生",
   traineeId = "",
   onOpenDiagnostics,
   onSwitchAccount,
+  onExitTestMode,
   onOverlayChange,
   onBack,
 }) => {
@@ -195,11 +199,14 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
         return;
       }
 
-      const res = await fetch(`${portalUrl}/api/desktop/academy-exam/status`, {
-        headers: {
-          Authorization: `Bearer ${telemetryToken}`,
-        },
-      });
+      const res = await fetch(
+        `${portalUrl}/api/desktop/academy-exam/status${isTestMode ? "?testMode=1" : ""}`,
+        {
+          headers: {
+            Authorization: `Bearer ${telemetryToken}`,
+          },
+        }
+      );
       const data = await res.json();
       if (!res.ok) {
         setErrorMsg(data?.error || "ポータル受験資格の確認に失敗しました。");
@@ -211,7 +218,7 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
     } finally {
       setLoadingStatus(false);
     }
-  }, [portalUrl, telemetryToken]);
+  }, [portalUrl, telemetryToken, isTestMode]);
 
   useEffect(() => {
     refreshDiagnostics();
@@ -307,7 +314,7 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
       setEnvReport(freshEnv);
       setRecordingProfile(freshProfile);
 
-      if (!freshEnv.modsClean) {
+      if (!isTestMode && !freshEnv.modsClean) {
         setErrorMsg(
           `ETS2に有効なMODが ${freshEnv.activeModsCount} 件検出されました。すべて無効化してから再診断してください。`
         );
@@ -410,6 +417,7 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
             Authorization: `Bearer ${telemetryToken}`,
           },
           body: JSON.stringify({
+            testMode: Boolean(isTestMode),
             modsClean: freshEnv.modsClean,
             activeModsCount: freshEnv.activeModsCount,
             activeMods: freshEnv.activeMods,
@@ -683,7 +691,7 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
   const gameRunning = Boolean(recordingProfile?.gameRunning);
   const canStart =
     Boolean(portalStatus?.eligible) &&
-    Boolean(envReport?.modsClean) &&
+    (Boolean(isTestMode) || Boolean(envReport?.modsClean)) &&
     gameRunning &&
     !loadingStatus;
 
@@ -707,6 +715,11 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
             {isTraineeOnly && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#ff1155] text-white text-[10px] font-black shrink-0">
                 <GraduationCap className="w-3 h-3" /> 技能研修専用モード
+              </span>
+            )}
+            {isTestMode && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-600 text-white text-[10px] font-black shrink-0">
+                TEST MODE
               </span>
             )}
             <span className="text-sm font-black tracking-wide truncate">
@@ -740,7 +753,7 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
             </button>
           )}
 
-          {isTraineeOnly && onSwitchAccount && (
+          {!isTestMode && isTraineeOnly && onSwitchAccount && (
             <button
               type="button"
               disabled={step === "recording" || step === "uploading"}
@@ -752,11 +765,30 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
               <span>再認証</span>
             </button>
           )}
+
+          {isTestMode && onExitTestMode && (
+            <button
+              type="button"
+              disabled={step === "recording" || step === "uploading"}
+              onClick={onExitTestMode}
+              className="px-2.5 py-1 rounded bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-[11px] font-bold flex items-center gap-1 text-white"
+            >
+              <LogOut className="w-3 h-3" />
+              <span>テスト終了</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Main Scrollable Content */}
       <div className="flex-1 overflow-y-auto p-3.5 space-y-2.5 text-xs">
+        {isTestMode && (
+          <div className="p-2 rounded-lg bg-purple-500/20 border border-purple-500/40 text-purple-100 text-[11px] leading-snug">
+            <strong>Founder テストモード稼働中:</strong>{" "}
+            研修生専用UI・録画・Google Drive・Gemini AI・管理画面審査まで一気通貫でテストできます（応募・役職・他指導員通知は一切変更されません）。
+          </div>
+        )}
+
         {errorMsg && (
           <div className="p-2.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-200 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
@@ -878,10 +910,16 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
           <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 space-y-1">
             <div className="font-black text-emerald-300 flex items-center gap-1.5 text-sm">
               <CheckCircle2 className="w-4 h-4" />
-              <span>提出完了！Google Drive 保存 ＆ AI一次チェックを開始しました</span>
+              <span>
+                {isTestMode
+                  ? "テスト提出完了！Google Drive 保存 ＆ AI一次チェックを開始しました"
+                  : "提出完了！Google Drive 保存 ＆ AI一次チェックを開始しました"}
+              </span>
             </div>
             <p className="text-[11px] text-emerald-100/90">
-              AI一次チェック完了後、指導員が最終審査を行いポータル・Discordでお知らせします（動画は7日後に自動削除されます）。
+              {isTestMode
+                ? "ポータルの `/admin/training/academy-exams` に「テスト」バッジ付きで登録されます（他の指導員への通知や本番データ変更はありません）。"
+                : "AI一次チェック完了後、指導員が最終審査を行いポータル・Discordでお知らせします（動画は7日後に自動削除されます）。"}
             </p>
           </div>
         )}
@@ -892,7 +930,7 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <div
                 className={`p-2 rounded-lg border ${
-                  portalStatus?.isWrittenPassed
+                  isTestMode || portalStatus?.isWrittenPassed
                     ? "bg-emerald-500/10 border-emerald-500/30"
                     : "bg-red-500/10 border-red-500/30"
                 }`}
@@ -905,9 +943,11 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
                     <XCircle className="w-3.5 h-3.5 text-red-400" />
                   )}
                   <span>
-                    {portalStatus
-                      ? `本日 ${portalStatus.todayAttempts}/${portalStatus.dailyLimit} ・ 残り ${portalStatus.remainingAttempts}/${portalStatus.totalLimit}`
-                      : "確認中..."}
+                    {!portalStatus
+                      ? "確認中..."
+                      : isTestMode
+                      ? "テストモード（資格・回数制限バイパス）"
+                      : `本日 ${portalStatus.todayAttempts}/${portalStatus.dailyLimit} ・ 残り ${portalStatus.remainingAttempts}/${portalStatus.totalLimit}`}
                   </span>
                 </div>
                 {portalStatus?.ineligibleReason && (
@@ -921,6 +961,8 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
                 className={`p-2 rounded-lg border ${
                   envReport?.modsClean
                     ? "bg-emerald-500/10 border-emerald-500/30"
+                    : isTestMode
+                    ? "bg-amber-500/10 border-amber-500/30"
                     : "bg-red-500/10 border-red-500/30"
                 }`}
               >
@@ -929,7 +971,7 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
                   {envReport?.modsClean ? (
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                   ) : (
-                    <XCircle className="w-3.5 h-3.5 text-red-400" />
+                    <XCircle className={`w-3.5 h-3.5 ${isTestMode ? "text-amber-400" : "text-red-400"}`} />
                   )}
                   <span>
                     {!envReport
@@ -941,6 +983,11 @@ export const AcademyExamView: React.FC<AcademyExamViewProps> = ({
                       : `MOD ${envReport.activeModsCount}件検出`}
                   </span>
                 </div>
+                {isTestMode && !envReport?.modsClean && (
+                  <div className="text-[10px] text-amber-300 mt-0.5">
+                    ※テストモードのためこのまま開始可能
+                  </div>
+                )}
               </div>
 
               <div

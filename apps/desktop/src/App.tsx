@@ -251,6 +251,8 @@ function App() {
   const [loginName, setLoginName] = useState("乗務員不明");
   const [expectedEmployeeId, setExpectedEmployeeId] = useState("");
   const [isTraineeOnly, setIsTraineeOnly] = useState(false);
+  const [canUseTestMode, setCanUseTestMode] = useState(false);
+  const [isAcademyTestMode, setIsAcademyTestMode] = useState(false);
   const [traineeId, setTraineeId] = useState("");
   const [userSteamId, setUserSteamId] = useState("");
   const [canSyncCities, setCanSyncCities] = useState(false);
@@ -344,6 +346,7 @@ function App() {
   const previousViewRef = useRef<DtsViewId>(previousView);
   const isFullScreenMapRef = useRef<boolean>(isFullScreenMap);
   const isTraineeOnlyRef = useRef<boolean>(false);
+  const isAcademyTestModeRef = useRef<boolean>(false);
   const profileNameRef = useRef<string>("");
   const wsAuthTokenRef = useRef<string>("");
   const voiceEnabledRef = useRef<boolean>(true);
@@ -363,7 +366,14 @@ function App() {
     previousViewRef.current = previousView;
     isFullScreenMapRef.current = isFullScreenMap;
     isTraineeOnlyRef.current = isTraineeOnly;
-  }, [currentView, previousView, isFullScreenMap, isTraineeOnly]);
+    isAcademyTestModeRef.current = isAcademyTestMode;
+  }, [
+    currentView,
+    previousView,
+    isFullScreenMap,
+    isTraineeOnly,
+    isAcademyTestMode,
+  ]);
 
   useEffect(() => {
     alarmTargetMsRef.current = alarmTargetMs;
@@ -376,8 +386,10 @@ function App() {
   }, [voiceEnabled, featureFlags]);
 
   const navigateTo = useCallback((next: DtsViewId) => {
+    const lockedToAcademy =
+      isTraineeOnlyRef.current || isAcademyTestModeRef.current;
     if (
-      isTraineeOnlyRef.current &&
+      lockedToAcademy &&
       next !== "academy_exam" &&
       next !== "diagnostics" &&
       next !== "login"
@@ -397,7 +409,7 @@ function App() {
 
   const navigateBack = useCallback(() => {
     playDtsChime("beep", voiceEnabledRef.current);
-    if (isTraineeOnlyRef.current) {
+    if (isTraineeOnlyRef.current || isAcademyTestModeRef.current) {
       setCurrentView("academy_exam");
       return;
     }
@@ -722,6 +734,7 @@ function App() {
           }
           if (data.user) {
             const traineeOnly = Boolean(data.user.isTraineeOnly);
+            const allowTestMode = Boolean(data.user.canUseTestMode);
             const tId = String(data.user.traineeId || "");
             const empId = String(
               data.user.employeeId || (traineeOnly ? tId || data.user.id || "" : "")
@@ -732,6 +745,11 @@ function App() {
             );
             isTraineeOnlyRef.current = traineeOnly;
             setIsTraineeOnly(traineeOnly);
+            setCanUseTestMode(allowTestMode);
+            if (!allowTestMode) {
+              isAcademyTestModeRef.current = false;
+              setIsAcademyTestMode(false);
+            }
             setTraineeId(tId);
             setExpectedEmployeeId(empId);
             profileNameRef.current = fetchedName;
@@ -1872,10 +1890,28 @@ function App() {
     dispatchOrders.filter((o) => o.status !== "completed").length +
     dispatchEvents.length;
 
+  const handleEnterAcademyTestMode = useCallback(() => {
+    if (!canUseTestMode) return;
+    playDtsChime("confirm", voiceEnabledRef.current);
+    isAcademyTestModeRef.current = true;
+    setIsAcademyTestMode(true);
+    setIsFullScreenMap(false);
+    setPreviousView("settings");
+    setCurrentView("academy_exam");
+  }, [canUseTestMode]);
+
+  const handleExitAcademyTestMode = useCallback(() => {
+    playDtsChime("beep", voiceEnabledRef.current);
+    isAcademyTestModeRef.current = false;
+    setIsAcademyTestMode(false);
+    setIsFullScreenMap(false);
+    setCurrentView("settings");
+  }, []);
+
   const showChrome =
     currentView !== "splash" &&
     !isFullScreenMap &&
-    !(isTraineeOnly && currentView === "academy_exam");
+    !((isTraineeOnly || isAcademyTestMode) && currentView === "academy_exam");
   const isDrivingMoving =
     currentView === "driving" && Math.abs(telemetry.speed || 0) > 1;
   const isActiveWork = currentView === "active_work";
@@ -2119,6 +2155,8 @@ function App() {
           overlayState={overlayState}
           companionInfo={companionInfo}
           featureFlags={featureFlags}
+          canUseTestMode={canUseTestMode}
+          onEnterAcademyTestMode={handleEnterAcademyTestMode}
           onToggleSmartAuto={(enabled) => {
             invoke<WorkState>("set_smart_auto_mode", { enabled })
               .then((ws) => setWorkState(ws))
@@ -2163,7 +2201,8 @@ function App() {
           telemetryToken={telemetryToken}
           telemetry={telemetry}
           isGameConnected={isGameConnected}
-          isTraineeOnly={isTraineeOnly}
+          isTraineeOnly={isTraineeOnly || isAcademyTestMode}
+          isTestMode={isAcademyTestMode}
           driverName={
             loginName !== "乗務員不明"
               ? loginName
@@ -2172,6 +2211,9 @@ function App() {
           traineeId={traineeId || expectedEmployeeId}
           onOpenDiagnostics={() => navigateTo("diagnostics")}
           onSwitchAccount={openLoginBrowser}
+          onExitTestMode={
+            isAcademyTestMode ? handleExitAcademyTestMode : undefined
+          }
           onOverlayChange={(next) => setOverlayState(next)}
           onBack={navigateBack}
         />

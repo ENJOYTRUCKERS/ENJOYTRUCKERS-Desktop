@@ -406,6 +406,7 @@ export interface AcademyExamStatusSubmission {
   id: string;
   examCode: string;
   attemptNumber: number;
+  isTest?: boolean;
   status: string;
   statusLabel: string;
   startedAt: string;
@@ -427,6 +428,7 @@ export interface AcademyExamStatusSubmission {
 
 export interface AcademyExamStatusResponse {
   success: boolean;
+  isTestMode?: boolean;
   hasApplication: boolean;
   applicationId?: string;
   eligible: boolean;
